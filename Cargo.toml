@@ -1,0 +1,10 @@
+[workspace]
+resolver = "2"
+members = [
+    "Contracts/ExampleContract",
+    "Contracts/PaymentProcessingContract",
+]
+
+[workspace.dependencies]
+soroban-sdk = "20.3.2"
+soroban-token-sdk = "20.3.2"
