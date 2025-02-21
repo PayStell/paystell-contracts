@@ -1,0 +1,19 @@
+[package]
+name = "payment-processing-contract"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+testutils = ["soroban-sdk/testutils"]
+
+[target.wasm32-unknown-unknown.dependencies]
+getrandom = { version = "0.2.10", features = ["custom"] }
