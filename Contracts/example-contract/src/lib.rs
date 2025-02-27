@@ -10,5 +10,5 @@ impl HelloContract {
         vec![&env, symbol_short!("Hello"), to]
     }
 }
-
+ q
 mod test;
