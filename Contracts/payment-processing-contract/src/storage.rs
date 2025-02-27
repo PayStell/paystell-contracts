@@ -1,9 +1,9 @@
 use soroban_sdk::{
     contracttype,
-    Env, Symbol, Map, Vec, Address, String,
+    Env, Symbol, Map, Vec, Address,
 };
 use crate::{
-    types::{Merchant, PaymentLink},
+    types::Merchant,
     error::PaymentError,
 };
 
@@ -11,16 +11,14 @@ use crate::{
 #[derive(Clone)]
 pub enum DataKey {
     Merchants,
-    PaymentLinks,
-    ProcessedPayments,
+    UsedNonces,
 }
 
 impl DataKey {
     fn as_symbol(self, env: &Env) -> Symbol {
         match self {
             DataKey::Merchants => Symbol::new(env, "merchants"),
-            DataKey::PaymentLinks => Symbol::new(env, "payment_links"),
-            DataKey::ProcessedPayments => Symbol::new(env, "processed_payments"),
+            DataKey::UsedNonces => Symbol::new(env, "used_nonces"),
         }
     }
 }
@@ -49,32 +47,19 @@ impl<'a> Storage<'a> {
             .ok_or(PaymentError::MerchantNotFound)
     }
 
-    pub fn save_payment_link(&self, id: &String, link: &PaymentLink) {
-        let mut links = self.get_payment_links_map();
-        links.set(id.clone(), link.clone());
+    pub fn is_nonce_used(&self, merchant: &Address, nonce: u64) -> bool {
+        let nonces = self.get_merchant_nonces(merchant);
+        nonces.contains(&nonce)
+    }
+
+    pub fn mark_nonce_used(&self, merchant: &Address, nonce: u64) {
+        let mut nonces = self.get_merchant_nonces(merchant);
+        nonces.push_back(nonce);
+        let mut used_nonces = self.get_used_nonces_map();
+        used_nonces.set(merchant.clone(), nonces);
         self.env.storage().instance().set(
-            &DataKey::PaymentLinks.as_symbol(self.env),
-            &links,
-        );
-    }
-
-    pub fn get_payment_link(&self, id: &String) -> Result<PaymentLink, PaymentError> {
-        let links = self.get_payment_links_map();
-        links.get(id.clone())
-            .ok_or(PaymentError::InvalidPaymentLink)
-    }
-
-    pub fn is_payment_processed(&self, payment_id: &String) -> bool {
-        let processed = self.get_processed_payments();
-        processed.contains(payment_id)
-    }
-
-    pub fn mark_payment_processed(&self, payment_id: &String) {
-        let mut processed = self.get_processed_payments();
-        processed.push_back(payment_id.clone());
-        self.env.storage().instance().set(
-            &DataKey::ProcessedPayments.as_symbol(self.env),
-            &processed,
+            &DataKey::UsedNonces.as_symbol(self.env),
+            &used_nonces,
         );
     }
 
@@ -84,15 +69,15 @@ impl<'a> Storage<'a> {
             .unwrap_or_else(|| Map::new(self.env))
     }
 
-    fn get_payment_links_map(&self) -> Map<String, PaymentLink> {
+    fn get_used_nonces_map(&self) -> Map<Address, Vec<u64>> {
         self.env.storage().instance()
-            .get(&DataKey::PaymentLinks.as_symbol(self.env))
+            .get(&DataKey::UsedNonces.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
     }
 
-    fn get_processed_payments(&self) -> Vec<String> {
-        self.env.storage().instance()
-            .get(&DataKey::ProcessedPayments.as_symbol(self.env))
+    fn get_merchant_nonces(&self, merchant: &Address) -> Vec<u64> {
+        let used_nonces = self.get_used_nonces_map();
+        used_nonces.get(merchant.clone())
             .unwrap_or_else(|| Vec::new(self.env))
     }
 } 

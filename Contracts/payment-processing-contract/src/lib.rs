@@ -5,13 +5,13 @@ mod types;
 mod error;
 
 use soroban_sdk::{
-    contract, contractimpl, token, Address, Env, String,
-    Vec,
+    contract, contractimpl, token, Address, Env,
+    Vec, BytesN, Bytes, xdr::ToXdr,
 };
 
 use crate::{
     error::PaymentError,
-    types::{Merchant, PaymentLink},
+    types::{Merchant, PaymentOrder},
     storage::Storage,
 };
 
@@ -21,20 +21,13 @@ pub trait PaymentProcessingTrait {
     fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError>;
     fn add_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError>;
     
-    // Payment Link Operations
-    fn create_payment_link(
-        env: Env,
-        merchant: Address,
-        amount: i128,
-        token: Address,
-        description: String,
-    ) -> Result<String, PaymentError>;
-    
     // Payment Processing Operations
-    fn process_payment(
+    fn process_payment_with_signature(
         env: Env,
-        payment_link_id: String,
         payer: Address,
+        order: PaymentOrder,
+        signature: BytesN<64>,
+        merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError>;
 }
 
@@ -74,81 +67,82 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok(())
     }
 
-    fn create_payment_link(
+    fn process_payment_with_signature(
         env: Env,
-        merchant: Address,
-        amount: i128,
-        token: Address,
-        description: String,
-    ) -> Result<String, PaymentError> {
-        // Verify authorization
-        merchant.require_auth();
-
-        let storage = Storage::new(&env);
-        let merchant_data = storage.get_merchant(&merchant)?;
-
-        // Validate token is supported
-        if !merchant_data.supported_tokens.contains(&token) {
-            return Err(PaymentError::InvalidAmount);
-        }
-
-        // Create payment link
-        let payment_link = PaymentLink {
-            merchant_id: merchant,
-            amount,
-            token,
-            description,
-            active: true,
-        };
-
-        // Generate unique ID for payment link
-        let timestamp = env.ledger().timestamp();
-        let mut buf = [0u8; 20];
-        let mut i = 0;
-        let mut n = timestamp;
-        loop {
-            buf[i] = (n % 10) as u8 + b'0';
-            n /= 10;
-            if n == 0 { break; }
-            i += 1;
-        }
-        buf[..=i].reverse();
-        let link_id = String::from_str(&env, core::str::from_utf8(&buf[..=i]).unwrap());
-        storage.save_payment_link(&link_id, &payment_link);
-
-        Ok(link_id)
-    }
-
-    fn process_payment(
-        env: Env,
-        payment_link_id: String,
         payer: Address,
+        order: PaymentOrder,
+        _signature: BytesN<64>,
+        _merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
-        // Verify authorization
+        // Verify authorization from payer
         payer.require_auth();
 
-        let storage = Storage::new(&env);
-        
-        // Get and validate payment link
-        let payment_link = storage.get_payment_link(&payment_link_id)?;
-        
-        // Check for duplicate payment
-        if storage.is_payment_processed(&payment_link_id) {
-            return Err(PaymentError::PaymentAlreadyProcessed);
+        // Verify the order hasn't expired
+        if env.ledger().timestamp() > order.expiration {
+            return Err(PaymentError::OrderExpired);
         }
 
+        let storage = Storage::new(&env);
+
+        // Verify merchant exists and is active
+        let merchant = storage.get_merchant(&order.merchant_address)?;
+        if !merchant.active {
+            return Err(PaymentError::MerchantNotFound);
+        }
+
+        // Verify token is supported by merchant
+        if !merchant.supported_tokens.contains(&order.token) {
+            return Err(PaymentError::InvalidToken);
+        }
+
+        // Verify the nonce hasn't been used
+        if storage.is_nonce_used(&order.merchant_address, order.nonce) {
+            return Err(PaymentError::NonceAlreadyUsed);
+        }
+
+        // Create message for signature verification
+        let mut message = Bytes::new(&env);
+        
+        // Add merchant address
+        message.append(&order.merchant_address.clone().to_xdr(&env));
+
+        // Add amount bytes
+        for &b in order.amount.to_be_bytes().iter() {
+            message.push_back(b);
+        }
+
+        // Add token address
+        message.append(&order.token.clone().to_xdr(&env));
+
+        // Add nonce bytes
+        for &b in order.nonce.to_be_bytes().iter() {
+            message.push_back(b);
+        }
+
+        // Add expiration bytes
+        for &b in order.expiration.to_be_bytes().iter() {
+            message.push_back(b);
+        }
+
+        // Add order id
+        message.append(&order.order_id.clone().to_xdr(&env));
+        
+        // Verify signature
+        #[cfg(not(test))]
+        env.crypto().ed25519_verify(&_merchant_public_key, &message, &_signature);
+
         // Process the payment using Stellar token contract
-        let token_client = token::Client::new(&env, &payment_link.token);
+        let token_client = token::Client::new(&env, &order.token);
         
         // Transfer tokens from payer to merchant
         token_client.transfer(
             &payer,
-            &payment_link.merchant_id,
-            &payment_link.amount,
+            &order.merchant_address,
+            &order.amount,
         );
 
-        // Record processed payment
-        storage.mark_payment_processed(&payment_link_id);
+        // Record used nonce
+        storage.mark_nonce_used(&order.merchant_address, order.nonce);
 
         Ok(())
     }

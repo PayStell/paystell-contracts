@@ -13,10 +13,11 @@ pub struct Merchant {
 
 #[contracttype]
 #[derive(Clone)]
-pub struct PaymentLink {
-    pub merchant_id: Address,
+pub struct PaymentOrder {
+    pub merchant_address: Address,
     pub amount: i128,
     pub token: Address,
-    pub description: String,
-    pub active: bool,
+    pub nonce: u64,
+    pub expiration: u64,
+    pub order_id: String,
 } 
