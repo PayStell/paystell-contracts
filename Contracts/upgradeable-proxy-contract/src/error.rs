@@ -16,4 +16,6 @@ pub enum ProxyError {
     NoRollbackAvailable = 10,
     StorageError = 11,
     ImplementationNotSet = 12,
+    ValidationFailed = 13,
+    MigrationFailed = 14,
 }
