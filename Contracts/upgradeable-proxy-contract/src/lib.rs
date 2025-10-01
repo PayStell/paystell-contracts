@@ -12,7 +12,7 @@ mod types;
 mod error;
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, Env, Address, Bytes, Symbol, Vec, Val,
+    contract, contractimpl, contracttype, Env, Address, Bytes, Symbol, Vec, Val, TryFromVal,
 };
 use crate::storage::Storage;
 use crate::types::{UpgradeProposal, ImplementationRecord};
@@ -99,12 +99,29 @@ impl ProxyTrait for UpgradeableProxyContract {
     if (proposal.approvals.len() as u32) < threshold { return Err(ProxyError::ThresholdNotMet); }
         let now = env.ledger().timestamp();
         if now < proposal.executable_at { return Err(ProxyError::DelayNotPassed); }
-        // Compatibility check placeholder (future): we could attempt calling a version function
-        // Migration hook placeholder: future invocation
+        // --- Validation Hook ---
+        // Require new implementation to expose `schema_version() -> u32` returning >0
+        // If this invocation fails or returns 0 treat as validation failure.
+        let schema_sym = Symbol::new(&env, "schema_version");
+        let version_val: Val = env.invoke_contract(&proposal.new_impl, &schema_sym, Vec::new(&env));
+        let schema_u32: u32 = u32::try_from_val(&env, &version_val).map_err(|_| ProxyError::ValidationFailed)?;
+        if schema_u32 == 0 { return Err(ProxyError::ValidationFailed); }
+
         let prev_impl = store.current_impl().unwrap_or(proposal.new_impl.clone());
         let prev_version = store.version();
         store.set_implementation(&proposal.new_impl)?;
         store.record_history(ImplementationRecord { version: prev_version + 1, implementation: proposal.new_impl.clone(), prev: prev_impl });
+
+        // --- Optional Migration Hook ---
+        // If metadata first byte == 1 attempt to call `migrate()` (no args, no return required)
+        if proposal.metadata.len() > 0 {
+            let flag: u8 = proposal.metadata.get_unchecked(0);
+            if flag == 1u8 {
+                let migrate_sym = Symbol::new(&env, "migrate");
+                let _migration_result: Val = env.invoke_contract(&proposal.new_impl, &migrate_sym, Vec::new(&env));
+            }
+        }
+
         proposal.executed = true;
         store.save_proposal(&proposal)?;
         Ok(())
