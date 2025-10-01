@@ -1,7 +1,4 @@
-use soroban_sdk::{
-    contracttype,
-    Address, String, Vec,
-};
+use soroban_sdk::{contracttype, Address, String, Vec};
 
 #[contracttype]
 #[derive(Clone)]
@@ -20,4 +17,12 @@ pub struct PaymentOrder {
     pub nonce: u64,
     pub expiration: u64,
     pub order_id: String,
-} 
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct Fee {
+    pub fee_rate: u64,
+    pub fee_collector: Address,
+    pub fee_token: Address,
+}

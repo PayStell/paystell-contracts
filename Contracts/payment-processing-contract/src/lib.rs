@@ -1,26 +1,24 @@
 #![no_std]
 
+mod error;
 mod storage;
 mod types;
-mod error;
 
-use soroban_sdk::{
-    contract, contractimpl, token, Address, Env,
-    Vec, BytesN, Bytes, xdr::ToXdr,
-};
+use soroban_sdk::{contract, contractimpl, token, xdr::ToXdr, Address, Bytes, BytesN, Env, Vec};
 
 use crate::{
     error::PaymentError,
-    types::{Merchant, PaymentOrder},
     storage::Storage,
+    types::{Merchant, PaymentOrder},
 };
 
 /// payment-processing-contract trait defining the core functionality
 pub trait PaymentProcessingTrait {
     // Merchant Management Operations
     fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError>;
-    fn add_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError>;
-    
+    fn add_supported_token(env: Env, merchant: Address, token: Address)
+        -> Result<(), PaymentError>;
+
     // Payment Processing Operations
     fn process_payment_with_signature(
         env: Env,
@@ -41,7 +39,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         merchant_address.require_auth();
 
         let storage = Storage::new(&env);
-        
+
         // Create new merchant record
         let merchant = Merchant {
             wallet_address: merchant_address.clone(),
@@ -53,7 +51,11 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok(())
     }
 
-    fn add_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError> {
+    fn add_supported_token(
+        env: Env,
+        merchant: Address,
+        token: Address,
+    ) -> Result<(), PaymentError> {
         // Verify authorization
         merchant.require_auth();
 
@@ -63,7 +65,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         // Add token to supported list
         merchant_data.supported_tokens.push_back(token);
         storage.save_merchant(&merchant, &merchant_data);
-        
+
         Ok(())
     }
 
@@ -102,7 +104,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         // Create message for signature verification
         let mut message = Bytes::new(&env);
-        
+
         // Add merchant address
         message.append(&order.merchant_address.clone().to_xdr(&env));
 
@@ -126,20 +128,17 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         // Add order id
         message.append(&order.order_id.clone().to_xdr(&env));
-        
+
         // Verify signature
         #[cfg(not(test))]
-        env.crypto().ed25519_verify(&_merchant_public_key, &message, &_signature);
+        env.crypto()
+            .ed25519_verify(&_merchant_public_key, &message, &_signature);
 
         // Process the payment using Stellar token contract
         let token_client = token::Client::new(&env, &order.token);
-        
+
         // Transfer tokens from payer to merchant
-        token_client.transfer(
-            &payer,
-            &order.merchant_address,
-            &order.amount,
-        );
+        token_client.transfer(&payer, &order.merchant_address, &order.amount);
 
         // Record used nonce
         storage.mark_nonce_used(&order.merchant_address, order.nonce);
