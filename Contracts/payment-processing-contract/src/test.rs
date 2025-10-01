@@ -99,7 +99,7 @@ fn test_payment_with_fees() {
     // Setup payer with balance
     let payer = Address::generate(&env);
     let payment_amount = 1000_i128;
-    
+
     env.mock_all_auths();
     token_admin_client.mint(&payer, &payment_amount);
 
@@ -134,7 +134,7 @@ fn test_payment_with_fees() {
     // Verify balances
     let expected_fee = payment_amount * 5 / 100;
     let expected_merchant_amount = payment_amount - expected_fee;
-    
+
     assert_eq!(token_client.balance(&merchant), expected_merchant_amount);
     assert_eq!(token_client.balance(&fee_collector), expected_fee);
     assert_eq!(token_client.balance(&payer), 0);
@@ -205,7 +205,7 @@ fn test_successful_payment_with_signature() {
     env.mock_all_auths();
     client.set_admin(&admin);
     env.mock_all_auths();
-    client.set_fee(&5, &fee_collector, &token);  // 5% fee
+    client.set_fee(&5, &fee_collector, &token); // 5% fee
 
     // Create payment order
     let order = PaymentOrder {
@@ -234,7 +234,7 @@ fn test_successful_payment_with_signature() {
     // Verify balances
     let expected_fee = amount * 5 / 100;
     let expected_merchant_amount = amount - expected_fee;
-    
+
     assert_eq!(token_client.balance(&merchant), expected_merchant_amount);
     assert_eq!(token_client.balance(&fee_collector), expected_fee);
     assert_eq!(token_client.balance(&payer), 0);

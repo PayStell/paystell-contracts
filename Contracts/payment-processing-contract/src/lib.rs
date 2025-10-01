@@ -9,7 +9,7 @@ use soroban_sdk::{contract, contractimpl, token, xdr::ToXdr, Address, Bytes, Byt
 use crate::{
     error::PaymentError,
     storage::Storage,
-    types::{Merchant, PaymentOrder, Fee},
+    types::{Fee, Merchant, PaymentOrder},
 };
 
 /// payment-processing-contract trait defining the core functionality
@@ -21,7 +21,12 @@ pub trait PaymentProcessingTrait {
 
     // Fee Management Operations
     fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError>;
-    fn set_fee(env: Env, fee_rate: u64, fee_collector: Address, fee_token: Address) -> Result<(), PaymentError>;
+    fn set_fee(
+        env: Env,
+        fee_rate: u64,
+        fee_collector: Address,
+        fee_token: Address,
+    ) -> Result<(), PaymentError>;
     fn get_fee_info(env: Env) -> Result<(u64, Address, Address), PaymentError>;
 
     // Payment Processing Operations
@@ -41,11 +46,28 @@ pub struct PaymentProcessingContract;
 impl PaymentProcessingTrait for PaymentProcessingContract {
     fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError> {
         let storage = Storage::new(&env);
+
+        // I am trying this alternative but this does not work as expected
+        // env.invoke() is not giving the invoker address correctly (it is being out of scope)
+        // if let Some(current_admin) = storage.get_admin() {
+        //     current_admin.require_auth();
+        // } else {
+        //     let invoker = env.invoke();
+        //     invoker.require_auth();
+        //     if invoker != admin {
+        //         return Err(PaymentError::NotAuthorized);
+        //     }
+        // }
         storage.set_admin(&admin);
         Ok(())
     }
 
-    fn set_fee(env: Env, fee_rate: u64, fee_collector: Address, fee_token: Address) -> Result<(), PaymentError> {
+    fn set_fee(
+        env: Env,
+        fee_rate: u64,
+        fee_collector: Address,
+        fee_token: Address,
+    ) -> Result<(), PaymentError> {
         let storage = Storage::new(&env);
         let fee = Fee {
             fee_rate,
@@ -61,7 +83,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     fn get_fee_info(env: Env) -> Result<(u64, Address, Address), PaymentError> {
         let storage = Storage::new(&env);
         let rate = storage.get_fee_rate();
-        let collector = storage.get_fee_collector().ok_or(PaymentError::AdminNotSet)?;
+        let collector = storage
+            .get_fee_collector()
+            .ok_or(PaymentError::AdminNotSet)?;
         let token = storage.get_fee_token().ok_or(PaymentError::InvalidToken)?;
         Ok((rate, collector, token))
     }
@@ -166,13 +190,11 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         env.crypto()
             .ed25519_verify(&_merchant_public_key, &message, &_signature);
 
-        let fee_collector = storage.get_fee_collector()
+        let fee_collector = storage
+            .get_fee_collector()
             .ok_or(PaymentError::NotAuthorized)?;
-        
-        fee_collector.require_auth();
-        
-        let fee_token = storage.get_fee_token()
-            .ok_or(PaymentError::InvalidToken)?;
+
+        let fee_token = storage.get_fee_token().ok_or(PaymentError::InvalidToken)?;
 
         if !merchant.supported_tokens.contains(&fee_token) {
             return Err(PaymentError::InvalidToken);
@@ -187,13 +209,17 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         // Process the payment using Stellar token contract
         let token_client = token::Client::new(&env, &order.token);
+        let payment_token_client = token::Client::new(&env, &order.token);
 
         // Transfer merchant amount first
         token_client.transfer(&payer, &order.merchant_address, &merchant_amount);
-        
+        payment_token_client.transfer(&payer, &order.merchant_address, &merchant_amount);
+
         // Then transfer fee if applicable
         if fee_amount > 0 {
             token_client.transfer(&payer, &fee_collector, &fee_amount);
+            let fee_token_client = token::Client::new(&env, &fee_token);
+            fee_token_client.transfer(&payer, &fee_collector, &fee_amount);
             env.events().publish(
                 ("fee_collected",),
                 (fee_collector.clone(), fee_amount, order.order_id.clone()),

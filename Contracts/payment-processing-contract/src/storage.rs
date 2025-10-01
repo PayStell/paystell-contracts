@@ -121,11 +121,14 @@ impl<'a> Storage<'a> {
             .set(&DataKey::Fee.as_symbol(self.env), &fee.clone());
         self.env.events().publish(
             ("fee_info_set",),
-            (fee.fee_rate, fee.fee_collector.clone(), fee.fee_token.clone())
+            (
+                fee.fee_rate,
+                fee.fee_collector.clone(),
+                fee.fee_token.clone(),
+            ),
         );
         Ok(())
     }
-
 
     pub fn get_fee_rate(&self) -> u64 {
         let fee_info: Option<Fee> = self
@@ -158,8 +161,10 @@ impl<'a> Storage<'a> {
     }
 
     pub fn calculate_fee(&self, amount: i128) -> i128 {
-        let fee_rate = self.get_fee_rate();
-        (amount as f64 * fee_rate as f64 / 100.0) as i128
+        let rate = i128::from(self.get_fee_rate());
+        let quotient = amount / 100;
+        let remainder = amount % 100;
+        quotient * rate + (remainder * rate) / 100
     }
 
     pub fn get_admin(&self) -> Option<Address> {
