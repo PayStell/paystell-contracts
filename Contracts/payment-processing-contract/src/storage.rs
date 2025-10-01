@@ -88,7 +88,7 @@ impl<'a> Storage<'a> {
             .unwrap_or_else(|| Vec::new(self.env))
     }
 
-    fn set_admin(&self, admin: &Address) {
+    pub fn set_admin(&self, admin: &Address) {
         self.env
             .storage()
             .instance()
@@ -110,16 +110,24 @@ impl<'a> Storage<'a> {
         Ok(())
     }
 
-    fn set_fee_info(&self, fee: &Fee, admin: &Address) -> Result<(), PaymentError> {
+    pub fn set_fee_info(&self, fee: &Fee, admin: &Address) -> Result<(), PaymentError> {
         self.require_admin(admin)?;
+        if fee.fee_rate > 10 {
+            return Err(PaymentError::InvalidFeeRate);
+        }
         self.env
             .storage()
             .instance()
             .set(&DataKey::Fee.as_symbol(self.env), &fee.clone());
+        self.env.events().publish(
+            ("fee_info_set",),
+            (fee.fee_rate, fee.fee_collector.clone(), fee.fee_token.clone())
+        );
         Ok(())
     }
 
-    fn get_current_fee_rate(&self) -> u64 {
+
+    pub fn get_fee_rate(&self) -> u64 {
         let fee_info: Option<Fee> = self
             .env
             .storage()
@@ -131,8 +139,33 @@ impl<'a> Storage<'a> {
         }
     }
 
-    fn calculate_fee(&self, amount: i128) -> i128 {
-        let fee_rate = self.get_current_fee_rate();
+    pub fn get_fee_collector(&self) -> Option<Address> {
+        let fee_info: Option<Fee> = self
+            .env
+            .storage()
+            .instance()
+            .get(&DataKey::Fee.as_symbol(self.env));
+        fee_info.map(|fee| fee.fee_collector)
+    }
+
+    pub fn get_fee_token(&self) -> Option<Address> {
+        let fee_info: Option<Fee> = self
+            .env
+            .storage()
+            .instance()
+            .get(&DataKey::Fee.as_symbol(self.env));
+        fee_info.map(|fee| fee.fee_token)
+    }
+
+    pub fn calculate_fee(&self, amount: i128) -> i128 {
+        let fee_rate = self.get_fee_rate();
         (amount as f64 * fee_rate as f64 / 100.0) as i128
+    }
+
+    pub fn get_admin(&self) -> Option<Address> {
+        self.env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin.as_symbol(self.env))
     }
 }

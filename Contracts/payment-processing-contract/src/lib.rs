@@ -9,7 +9,7 @@ use soroban_sdk::{contract, contractimpl, token, xdr::ToXdr, Address, Bytes, Byt
 use crate::{
     error::PaymentError,
     storage::Storage,
-    types::{Merchant, PaymentOrder},
+    types::{Merchant, PaymentOrder, Fee},
 };
 
 /// payment-processing-contract trait defining the core functionality
@@ -18,6 +18,11 @@ pub trait PaymentProcessingTrait {
     fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError>;
     fn add_supported_token(env: Env, merchant: Address, token: Address)
         -> Result<(), PaymentError>;
+
+    // Fee Management Operations
+    fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError>;
+    fn set_fee(env: Env, fee_rate: u64, fee_collector: Address, fee_token: Address) -> Result<(), PaymentError>;
+    fn get_fee_info(env: Env) -> Result<(u64, Address, Address), PaymentError>;
 
     // Payment Processing Operations
     fn process_payment_with_signature(
@@ -34,6 +39,33 @@ pub struct PaymentProcessingContract;
 
 #[contractimpl]
 impl PaymentProcessingTrait for PaymentProcessingContract {
+    fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError> {
+        let storage = Storage::new(&env);
+        storage.set_admin(&admin);
+        Ok(())
+    }
+
+    fn set_fee(env: Env, fee_rate: u64, fee_collector: Address, fee_token: Address) -> Result<(), PaymentError> {
+        let storage = Storage::new(&env);
+        let fee = Fee {
+            fee_rate,
+            fee_collector,
+            fee_token,
+        };
+        let admin = storage.get_admin().ok_or(PaymentError::AdminNotSet)?;
+        admin.require_auth();
+        storage.set_fee_info(&fee, &admin)?;
+        Ok(())
+    }
+
+    fn get_fee_info(env: Env) -> Result<(u64, Address, Address), PaymentError> {
+        let storage = Storage::new(&env);
+        let rate = storage.get_fee_rate();
+        let collector = storage.get_fee_collector().ok_or(PaymentError::AdminNotSet)?;
+        let token = storage.get_fee_token().ok_or(PaymentError::InvalidToken)?;
+        Ok((rate, collector, token))
+    }
+
     fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError> {
         // Verify authorization
         merchant_address.require_auth();
@@ -134,11 +166,39 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         env.crypto()
             .ed25519_verify(&_merchant_public_key, &message, &_signature);
 
+        let fee_collector = storage.get_fee_collector()
+            .ok_or(PaymentError::NotAuthorized)?;
+        
+        fee_collector.require_auth();
+        
+        let fee_token = storage.get_fee_token()
+            .ok_or(PaymentError::InvalidToken)?;
+
+        if !merchant.supported_tokens.contains(&fee_token) {
+            return Err(PaymentError::InvalidToken);
+        }
+
+        let fee_amount = storage.calculate_fee(order.amount);
+        let merchant_amount = order.amount - fee_amount;
+
+        if fee_amount < 0 || merchant_amount < 0 {
+            return Err(PaymentError::InvalidAmount);
+        }
+
         // Process the payment using Stellar token contract
         let token_client = token::Client::new(&env, &order.token);
 
-        // Transfer tokens from payer to merchant
-        token_client.transfer(&payer, &order.merchant_address, &order.amount);
+        // Transfer merchant amount first
+        token_client.transfer(&payer, &order.merchant_address, &merchant_amount);
+        
+        // Then transfer fee if applicable
+        if fee_amount > 0 {
+            token_client.transfer(&payer, &fee_collector, &fee_amount);
+            env.events().publish(
+                ("fee_collected",),
+                (fee_collector.clone(), fee_amount, order.order_id.clone()),
+            );
+        }
 
         // Record used nonce
         storage.mark_nonce_used(&order.merchant_address, order.nonce);

@@ -17,6 +17,7 @@ pub struct PaymentOrder {
     pub nonce: u64,
     pub expiration: u64,
     pub order_id: String,
+    pub fee_amount: i128,
 }
 
 #[contracttype]
