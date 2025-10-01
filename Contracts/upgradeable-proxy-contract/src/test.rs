@@ -12,6 +12,8 @@ pub struct DummyImpl;
 impl DummyImpl {
     pub fn version(_env: Env) -> u32 { 1 }
     pub fn ping(_env: Env, x: u32) -> u32 { x + 7 }
+    pub fn schema_version(_env: Env) -> u32 { 1 }
+    pub fn migrate(_env: Env) { /* no-op */ }
 }
 
 #[test]
@@ -33,7 +35,8 @@ fn test_init_and_propose_execute_flow() {
 
     // propose upgrade
     env.mock_all_auths();
-    let meta = Bytes::from_slice(&env, b"dummy v1");
+    // metadata first byte 1 -> request migration
+    let meta = Bytes::from_slice(&env, &[1u8, b'v', b'1']);
     let prop_id = client.propose_upgrade(&impl_addr, &meta);
 
     // approvals
@@ -48,4 +51,31 @@ fn test_init_and_propose_execute_flow() {
     let res_val = client.forward(&symbol_short!("ping"), &Vec::from_array(&env, [arg]));
     let res_u32: u32 = u32::try_from_val(&env, &res_val).unwrap();
     assert_eq!(res_u32, 12u32);
+}
+
+// Implementation without schema_version should cause validation failure (panic)
+use soroban_sdk::{contract as contract2, contractimpl as contractimpl2};
+#[contract2]
+pub struct BadImpl;
+#[contractimpl2]
+impl BadImpl { pub fn alt_ping(_env: Env) -> u32 { 1 } }
+
+#[test]
+#[should_panic]
+fn test_validation_missing_schema_version() {
+    let env = Env::default();
+    let proxy_id = env.register(UpgradeableProxyContract{}, ());
+    let client = UpgradeableProxyContractClient::new(&env, &proxy_id);
+    let admin1 = Address::generate(&env);
+    let admin2 = Address::generate(&env);
+    let admins = Vec::from_array(&env, [admin1.clone(), admin2.clone()]);
+    env.mock_all_auths();
+    client.init(&admins, &2u32, &0u64);
+    let bad_addr = env.register(BadImpl{}, ());
+    let meta = Bytes::from_slice(&env, &[0u8]);
+    env.mock_all_auths();
+    let pid = client.propose_upgrade(&bad_addr, &meta);
+    env.mock_all_auths(); client.approve_upgrade(&pid, &admin1);
+    env.mock_all_auths(); client.approve_upgrade(&pid, &admin2);
+    env.mock_all_auths(); client.execute_upgrade(&pid); // should panic due to validation
 }
