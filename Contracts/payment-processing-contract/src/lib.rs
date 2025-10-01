@@ -188,7 +188,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         let fee_collector = storage
             .get_fee_collector()
-            .ok_or(PaymentError::NotAuthorized)?;
+            .ok_or(PaymentError::AdminNotSet)?;
 
         let fee_token = storage.get_fee_token().ok_or(PaymentError::InvalidToken)?;
 
@@ -202,11 +202,11 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         }
 
         let fee_amount = storage.calculate_fee(order.amount);
-        let merchant_amount = order.amount - fee_amount;
 
-        if fee_amount < 0 || merchant_amount < 0 {
+        if fee_amount < 0 {
             return Err(PaymentError::InvalidAmount);
         }
+        let merchant_amount = order.amount - fee_amount;
 
         // Process the payment using Stellar token contract
         let payment_token_client = token::Client::new(&env, &order.token);

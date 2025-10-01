@@ -1,15 +1,10 @@
 #![cfg(test)]
 
 use crate::{
-    storage::Storage,
-    types::PaymentOrder,
-    PaymentProcessingContract,
+    storage::Storage, types::PaymentOrder, PaymentProcessingContract,
     PaymentProcessingContractClient,
 };
-use soroban_sdk::{
-    testutils::Address as _,
-    token, Address, BytesN, Env, String, Vec,
-};
+use soroban_sdk::{testutils::Address as _, token, Address, BytesN, Env, String, Vec};
 
 fn create_token_contract<'a>(
     e: &'a Env,
@@ -55,7 +50,6 @@ fn test_fee_management() {
     env.mock_all_auths();
     client.set_admin(&admin);
 
-
     // Set fee (5%)
     env.mock_all_auths();
     client.set_fee(&5, &fee_collector, &fee_token);
@@ -65,11 +59,10 @@ fn test_fee_management() {
     assert_eq!(rate, 5);
     assert_eq!(collector, fee_collector);
     assert_eq!(token, fee_token);
-
 }
 
 #[test]
-#[should_panic]  // AdminNotSet
+#[should_panic] // AdminNotSet
 fn test_set_fee_no_admin() {
     let env = Env::default();
     let contract_id = env.register(PaymentProcessingContract {}, ());
@@ -198,11 +191,10 @@ fn test_add_supported_token() {
     // Add supported token
     env.mock_all_auths();
     client.add_supported_token(&merchant, &token);
-
 }
 
 #[test]
-#[should_panic]  // MerchantNotFound
+#[should_panic] // MerchantNotFound
 fn test_add_token_to_nonexistent_merchant() {
     let env = Env::default();
     let contract_id = env.register(PaymentProcessingContract {}, ());
@@ -215,7 +207,6 @@ fn test_add_token_to_nonexistent_merchant() {
     env.mock_all_auths();
     client.add_supported_token(&merchant, &token);
 }
-
 
 #[test]
 fn test_successful_payment_with_signature() {
