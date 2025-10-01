@@ -47,17 +47,13 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError> {
         let storage = Storage::new(&env);
 
-        // I am trying this alternative but this does not work as expected
-        // env.invoke() is not giving the invoker address correctly (it is being out of scope)
-        // if let Some(current_admin) = storage.get_admin() {
-        //     current_admin.require_auth();
-        // } else {
-        //     let invoker = env.invoke();
-        //     invoker.require_auth();
-        //     if invoker != admin {
-        //         return Err(PaymentError::NotAuthorized);
-        //     }
-        // }
+        if let Some(current_admin) = storage.get_admin() {
+            // Existing admin must authorize the change
+            current_admin.require_auth();
+        } else {
+            // First-time setup: new admin must authorize themselves
+            admin.require_auth();
+        }
         storage.set_admin(&admin);
         Ok(())
     }
@@ -200,6 +196,11 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             return Err(PaymentError::InvalidToken);
         }
 
+        // Ensure fee token matches payment token
+        if fee_token != order.token {
+            return Err(PaymentError::InvalidToken);
+        }
+
         let fee_amount = storage.calculate_fee(order.amount);
         let merchant_amount = order.amount - fee_amount;
 
@@ -208,16 +209,13 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         }
 
         // Process the payment using Stellar token contract
-        let token_client = token::Client::new(&env, &order.token);
         let payment_token_client = token::Client::new(&env, &order.token);
 
         // Transfer merchant amount first
-        token_client.transfer(&payer, &order.merchant_address, &merchant_amount);
         payment_token_client.transfer(&payer, &order.merchant_address, &merchant_amount);
 
         // Then transfer fee if applicable
         if fee_amount > 0 {
-            token_client.transfer(&payer, &fee_collector, &fee_amount);
             let fee_token_client = token::Client::new(&env, &fee_token);
             fee_token_client.transfer(&payer, &fee_collector, &fee_amount);
             env.events().publish(
