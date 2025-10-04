@@ -12,6 +12,10 @@ pub enum PaymentError {
     InvalidAmount = 5,
     OrderExpired = 6,
     InvalidToken = 7,
+    PaymentRecordNotFound = 8,
+    PaymentRecordCreationFailed = 9,
+    PaymentRecordUpdateFailed = 10,
+    InvalidPaymentStatus = 11,
 }
 
 impl fmt::Display for PaymentError {
@@ -24,6 +28,10 @@ impl fmt::Display for PaymentError {
             PaymentError::InvalidAmount => write!(f, "Invalid amount"),
             PaymentError::OrderExpired => write!(f, "Payment order has expired"),
             PaymentError::InvalidToken => write!(f, "Token not supported by merchant"),
+            PaymentError::PaymentRecordNotFound => write!(f, "Payment record not found"),
+            PaymentError::PaymentRecordCreationFailed => write!(f, "Failed to create payment record"),
+            PaymentError::PaymentRecordUpdateFailed => write!(f, "Failed to update payment record"),
+            PaymentError::InvalidPaymentStatus => write!(f, "Invalid payment status"),
         }
     }
 } 
