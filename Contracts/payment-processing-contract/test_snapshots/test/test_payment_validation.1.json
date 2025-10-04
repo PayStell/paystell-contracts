@@ -80,7 +80,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 200
+                    "lo": 100
                   }
                 }
               ]
@@ -136,7 +136,7 @@
                         "symbol": "nonce"
                       },
                       "val": {
-                        "u64": 0
+                        "u64": 5000
                       }
                     },
                     {
@@ -144,7 +144,7 @@
                         "symbol": "order_id"
                       },
                       "val": {
-                        "string": "TEST_ORDER_1"
+                        "string": "ORDER_5"
                       }
                     },
                     {
@@ -158,10 +158,10 @@
                   ]
                 },
                 {
-                  "bytes": "03030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303"
+                  "bytes": "02020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202"
                 },
                 {
-                  "bytes": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+                  "bytes": "0101010101010101010101010101010101010101010101010101010101010101"
                 }
               ]
             }
@@ -444,7 +444,7 @@
                                       "symbol": "nonce"
                                     },
                                     "val": {
-                                      "u64": 0
+                                      "u64": 5000
                                     }
                                   },
                                   {
@@ -452,7 +452,7 @@
                                       "symbol": "order_id"
                                     },
                                     "val": {
-                                      "string": "TEST_ORDER_1"
+                                      "string": "ORDER_5"
                                     }
                                   },
                                   {
@@ -518,7 +518,7 @@
                               "val": {
                                 "vec": [
                                   {
-                                    "u64": 0
+                                    "u64": 5000
                                   }
                                 ]
                               }
@@ -785,7 +785,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 100
+                          "lo": 0
                         }
                       }
                     },
@@ -949,283 +949,5 @@
       ]
     ]
   },
-  "events": [
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "pay_creat"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "amount"
-                  },
-                  "val": {
-                    "i128": {
-                      "hi": 0,
-                      "lo": 100
-                    }
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "merchant"
-                  },
-                  "val": {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "order_id"
-                  },
-                  "val": {
-                    "string": "TEST_ORDER_1"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "payer"
-                  },
-                  "val": {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "payment_id"
-                  },
-                  "val": {
-                    "string": "PAY_2"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "token"
-                  },
-                  "val": {
-                    "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": true
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "pay_stat"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "error_message"
-                  },
-                  "val": "void"
-                },
-                {
-                  "key": {
-                    "symbol": "new_status"
-                  },
-                  "val": {
-                    "vec": [
-                      {
-                        "symbol": "Processing"
-                      }
-                    ]
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "old_status"
-                  },
-                  "val": {
-                    "vec": [
-                      {
-                        "symbol": "Pending"
-                      }
-                    ]
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "payment_id"
-                  },
-                  "val": {
-                    "string": "PAY_2"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": true
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "pay_stat"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "error_message"
-                  },
-                  "val": {
-                    "string": "Payment processing failed"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "new_status"
-                  },
-                  "val": {
-                    "vec": [
-                      {
-                        "symbol": "Failed"
-                      }
-                    ]
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "old_status"
-                  },
-                  "val": {
-                    "vec": [
-                      {
-                        "symbol": "Processing"
-                      }
-                    ]
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "payment_id"
-                  },
-                  "val": {
-                    "string": "PAY_2"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": true
-    },
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "pay_fail"
-              }
-            ],
-            "data": {
-              "map": [
-                {
-                  "key": {
-                    "symbol": "error_message"
-                  },
-                  "val": {
-                    "string": "Payment processing failed"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "merchant"
-                  },
-                  "val": {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "payer"
-                  },
-                  "val": {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "payment_id"
-                  },
-                  "val": {
-                    "string": "PAY_2"
-                  }
-                },
-                {
-                  "key": {
-                    "symbol": "timestamp"
-                  },
-                  "val": {
-                    "u64": 0
-                  }
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": true
-    }
-  ]
+  "events": []
 }
