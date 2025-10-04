@@ -47,6 +47,11 @@ impl<'a> Storage<'a> {
             .ok_or(PaymentError::MerchantNotFound)
     }
 
+    pub fn merchant_exists(&self, address: &Address) -> bool {
+        let merchants = self.get_merchants_map();
+        merchants.contains_key(address.clone())
+    }
+
     pub fn is_nonce_used(&self, merchant: &Address, nonce: u64) -> bool {
         let nonces = self.get_merchant_nonces(merchant);
         nonces.contains(&nonce)
