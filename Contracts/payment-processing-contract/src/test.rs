@@ -5,7 +5,10 @@ use soroban_sdk::{
     Address, Env, String, BytesN,
     token,
 };
-use crate::{PaymentProcessingContract, PaymentProcessingContractClient, types::PaymentOrder};
+use crate::{
+    PaymentProcessingContract, PaymentProcessingContractClient,
+    types::{PaymentOrder, PaymentStatus, PaymentRecordQuery, QueryFilter},
+};
 
 fn create_token_contract<'a>(e: &'a Env, admin: &Address) -> (Address, token::Client<'a>, token::StellarAssetClient<'a>) {
     let token_id = e.register_stellar_asset_contract_v2(admin.clone());
@@ -111,7 +114,7 @@ fn test_successful_payment_with_signature() {
     env.mock_all_auths();
     
     // Process payment
-    client.process_payment_with_signature(
+    let payment_id = client.process_payment_with_signature(
         &payer,
         &order,
         &signature,
@@ -121,6 +124,24 @@ fn test_successful_payment_with_signature() {
     // Verify balances
     assert_eq!(token_client.balance(&merchant), amount);
     assert_eq!(token_client.balance(&payer), 0);
+    
+    // Verify payment record was created
+    let payment_record = client.get_payment_record(&payment_id);
+    assert_eq!(payment_record.payer, payer);
+    assert_eq!(payment_record.merchant, merchant);
+    assert_eq!(payment_record.amount, amount);
+    assert_eq!(payment_record.status, PaymentStatus::Completed);
+    assert!(payment_record.completed_at.is_some());
+    
+    // Verify payment appears in merchant's history
+    let merchant_payments = client.get_merchant_payments(&merchant);
+    assert_eq!(merchant_payments.len(), 1);
+    assert_eq!(merchant_payments.get(0).unwrap(), payment_id);
+    
+    // Verify payment appears in payer's history
+    let payer_payments = client.get_payer_payments(&payer);
+    assert_eq!(payer_payments.len(), 1);
+    assert_eq!(payer_payments.get(0).unwrap(), payment_id);
 }
 
 #[test]
@@ -260,4 +281,265 @@ fn test_unsupported_token() {
         &signature,
         &merchant_public
     );
+}
+
+#[test]
+fn test_payment_history_query_by_merchant() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let merchant_public = BytesN::from_array(&env, &[1u8; 32]);
+    
+    let admin = Address::generate(&env);
+    let (token, _, token_admin) = create_token_contract(&env, &admin);
+    
+    let payer1 = Address::generate(&env);
+    let payer2 = Address::generate(&env);
+    let amount = 100_i128;
+    
+    // Register merchant and add token
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    client.add_supported_token(&merchant, &token);
+    
+    // Create and process first payment
+    let order1 = PaymentOrder {
+        merchant_address: merchant.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 1000u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_1"),
+    };
+    
+    token_admin.mint(&payer1, &amount);
+    env.mock_all_auths();
+    let payment_id1 = client.process_payment_with_signature(
+        &payer1,
+        &order1,
+        &BytesN::from_array(&env, &[2u8; 64]),
+        &merchant_public
+    );
+    
+    // Create and process second payment
+    let order2 = PaymentOrder {
+        merchant_address: merchant.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 2000u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_2"),
+    };
+    
+    token_admin.mint(&payer2, &amount);
+    env.mock_all_auths();
+    let payment_id2 = client.process_payment_with_signature(
+        &payer2,
+        &order2,
+        &BytesN::from_array(&env, &[2u8; 64]),
+        &merchant_public
+    );
+    
+    // Query payments by merchant
+    let query = PaymentRecordQuery {
+        filter: QueryFilter::ByMerchant(merchant.clone()),
+        from_timestamp: None,
+        to_timestamp: None,
+    };
+    
+    let results = client.query_payments(&query);
+    assert_eq!(results.len(), 2);
+    
+    // Verify both payments are in results
+    let mut found_payment1 = false;
+    let mut found_payment2 = false;
+    for record in results.iter() {
+        if record.payment_id == payment_id1 {
+            found_payment1 = true;
+        }
+        if record.payment_id == payment_id2 {
+            found_payment2 = true;
+        }
+    }
+    assert!(found_payment1);
+    assert!(found_payment2);
+}
+
+#[test]
+fn test_payment_history_query_by_payer() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant1 = Address::generate(&env);
+    let merchant2 = Address::generate(&env);
+    let merchant_public = BytesN::from_array(&env, &[1u8; 32]);
+    
+    let admin = Address::generate(&env);
+    let (token, _, token_admin) = create_token_contract(&env, &admin);
+    
+    let payer = Address::generate(&env);
+    let amount = 100_i128;
+    
+    // Register merchants and add token
+    env.mock_all_auths();
+    client.register_merchant(&merchant1);
+    client.add_supported_token(&merchant1, &token);
+    client.register_merchant(&merchant2);
+    client.add_supported_token(&merchant2, &token);
+    
+    // Create and process payment to merchant1
+    let order1 = PaymentOrder {
+        merchant_address: merchant1.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 3000u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_3"),
+    };
+    
+    token_admin.mint(&payer, &(amount * 2));
+    env.mock_all_auths();
+    let payment_id1 = client.process_payment_with_signature(
+        &payer,
+        &order1,
+        &BytesN::from_array(&env, &[2u8; 64]),
+        &merchant_public
+    );
+    
+    // Create and process payment to merchant2
+    let order2 = PaymentOrder {
+        merchant_address: merchant2.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 4000u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_4"),
+    };
+    
+    env.mock_all_auths();
+    let payment_id2 = client.process_payment_with_signature(
+        &payer,
+        &order2,
+        &BytesN::from_array(&env, &[2u8; 64]),
+        &merchant_public
+    );
+    
+    // Query payments by payer
+    let query = PaymentRecordQuery {
+        filter: QueryFilter::ByPayer(payer.clone()),
+        from_timestamp: None,
+        to_timestamp: None,
+    };
+    
+    let results = client.query_payments(&query);
+    assert_eq!(results.len(), 2);
+    
+    // Verify both payments are in results
+    let mut found_payment1 = false;
+    let mut found_payment2 = false;
+    for record in results.iter() {
+        if record.payment_id == payment_id1 {
+            found_payment1 = true;
+        }
+        if record.payment_id == payment_id2 {
+            found_payment2 = true;
+        }
+    }
+    assert!(found_payment1);
+    assert!(found_payment2);
+}
+
+#[test]
+fn test_payment_validation() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let merchant_public = BytesN::from_array(&env, &[1u8; 32]);
+    
+    let admin = Address::generate(&env);
+    let (token, _, token_admin) = create_token_contract(&env, &admin);
+    let payer = Address::generate(&env);
+    let amount = 100_i128;
+    
+    // Register merchant and add token
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    client.add_supported_token(&merchant, &token);
+    
+    // Create and process payment
+    let order = PaymentOrder {
+        merchant_address: merchant.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 5000u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_5"),
+    };
+    
+    token_admin.mint(&payer, &amount);
+    env.mock_all_auths();
+    let payment_id = client.process_payment_with_signature(
+        &payer,
+        &order,
+        &BytesN::from_array(&env, &[2u8; 64]),
+        &merchant_public
+    );
+    
+    // Validate payment record
+    let is_valid = client.validate_payment(&payment_id);
+    assert!(is_valid);
+}
+
+#[test]
+fn test_payment_reconciliation() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let merchant_public = BytesN::from_array(&env, &[1u8; 32]);
+    
+    let admin = Address::generate(&env);
+    let (token, _, token_admin) = create_token_contract(&env, &admin);
+    let payer = Address::generate(&env);
+    let amount = 100_i128;
+    
+    // Register merchant and add token
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    client.add_supported_token(&merchant, &token);
+    
+    // Create and process payment
+    let order = PaymentOrder {
+        merchant_address: merchant.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 6000u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_6"),
+    };
+    
+    token_admin.mint(&payer, &amount);
+    env.mock_all_auths();
+    let payment_id = client.process_payment_with_signature(
+        &payer,
+        &order,
+        &BytesN::from_array(&env, &[2u8; 64]),
+        &merchant_public
+    );
+    
+    // Create vector with payment ID for reconciliation
+    let mut payment_ids = soroban_sdk::Vec::new(&env);
+    payment_ids.push_back(payment_id);
+    
+    // Reconcile payments
+    let fixed_count = client.reconcile_payments(&payment_ids);
+    
+    // Should be 0 since payment is already consistent
+    assert_eq!(fixed_count, 0);
 }
