@@ -2,10 +2,15 @@
 
 use soroban_sdk::{
     testutils::Address as _,
-    Address, Env, String, BytesN,
+    Address, Env, String, BytesN, Vec,
     token,
 };
-use crate::{PaymentProcessingContract, PaymentProcessingContractClient, types::PaymentOrder};
+use crate::{
+    PaymentProcessingContract, PaymentProcessingContractClient,
+    types::{PaymentOrder, PaymentStatus},
+    error::PaymentError,
+    storage::Storage,
+};
 
 fn create_token_contract<'a>(e: &'a Env, admin: &Address) -> (Address, token::Client<'a>, token::StellarAssetClient<'a>) {
     let token_id = e.register_stellar_asset_contract_v2(admin.clone());
@@ -260,4 +265,379 @@ fn test_unsupported_token() {
         &signature,
         &merchant_public
     );
+}
+
+// Multi-signature payment tests
+
+#[test]
+fn test_initiate_multisig_payment_success() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup
+    let admin = Address::generate(&env);
+    let (token, _, _) = create_token_contract(&env, &admin);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+    let signer3 = Address::generate(&env);
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+    signers.push_back(signer3.clone());
+
+    let amount = 1000_i128;
+    let threshold = 2u32;
+    let expiry = env.ledger().timestamp() + 3600; // 1 hour from now
+
+    env.mock_all_auths();
+
+    // Initiate payment
+    let payment_id = client.initiate_multisig_payment(
+        &amount,
+        &token,
+        &recipient,
+        &signers,
+        &threshold,
+        &expiry,
+    );
+
+    // Verify payment was created
+    let payment = client.get_multisig_payment(&payment_id);
+    assert_eq!(payment.amount, amount);
+    assert_eq!(payment.token, token);
+    assert_eq!(payment.recipient, recipient);
+    assert_eq!(payment.threshold, threshold);
+    assert_eq!(payment.status, PaymentStatus::Pending);
+    assert_eq!(payment.signers.len(), 3);
+}
+
+#[test]
+fn test_initiate_multisig_payment_invalid_threshold() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let (token, _, _) = create_token_contract(&env, &admin);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1);
+
+    let amount = 1000_i128;
+    let threshold = 5u32; // Invalid: threshold > signers count
+    let expiry = env.ledger().timestamp() + 3600;
+
+    env.mock_all_auths();
+
+    // Should fail with InvalidThreshold
+    let result = client.try_initiate_multisig_payment(
+        &amount,
+        &token,
+        &recipient,
+        &signers,
+        &threshold,
+        &expiry,
+    );
+
+    assert_eq!(result, Err(Ok(PaymentError::InvalidThreshold)));
+}
+
+#[test]
+fn test_add_signature_success() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup payment
+    let admin = Address::generate(&env);
+    let (token, _, _) = create_token_contract(&env, &admin);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+
+    env.mock_all_auths();
+
+    let payment_id = client.initiate_multisig_payment(
+        &1000_i128,
+        &token,
+        &recipient,
+        &signers,
+        &2u32,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    // Add signature from signer1
+    client.add_signature(&payment_id, &signer1);
+
+    // Verify signature was added
+    let payment = client.get_multisig_payment(&payment_id);
+    assert_eq!(payment.signatures.len(), 1);
+    assert_eq!(payment.signatures.get(signer1).unwrap(), true);
+}
+
+#[test]
+fn test_add_signature_not_a_signer() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup payment
+    let admin = Address::generate(&env);
+    let (token, _, _) = create_token_contract(&env, &admin);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let not_signer = Address::generate(&env);
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1);
+
+    env.mock_all_auths();
+
+    let payment_id = client.initiate_multisig_payment(
+        &1000_i128,
+        &token,
+        &recipient,
+        &signers,
+        &1u32,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    // Try to add signature from non-signer
+    let result = client.try_add_signature(&payment_id, &not_signer);
+    assert_eq!(result, Err(Ok(PaymentError::NotASigner)));
+}
+
+#[test]
+fn test_execute_multisig_payment_success() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup token and balances
+    let admin = Address::generate(&env);
+    let (token, token_client, token_admin) = create_token_contract(&env, &admin);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+
+    let amount = 1000_i128;
+
+    // Mock all auths first
+    env.mock_all_auths();
+
+    // Mint tokens to signer1 (executor)
+    token_admin.mint(&signer1, &amount);
+
+    // Create payment
+    let payment_id = client.initiate_multisig_payment(
+        &amount,
+        &token,
+        &recipient,
+        &signers,
+        &2u32,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    // Add signatures
+    client.add_signature(&payment_id, &signer1);
+    client.add_signature(&payment_id, &signer2);
+
+    // Execute payment
+    client.execute_multisig_payment(&payment_id, &signer1);
+
+    // Verify payment was executed (should be removed from active payments)
+    let result = client.try_get_multisig_payment(&payment_id);
+    assert!(result.is_err()); // Should be removed after execution
+
+    // Verify token transfer
+    assert_eq!(token_client.balance(&recipient), amount);
+    assert_eq!(token_client.balance(&signer1), 0);
+}
+
+#[test]
+fn test_execute_multisig_payment_threshold_not_met() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup
+    let admin = Address::generate(&env);
+    let (token, _, token_admin) = create_token_contract(&env, &admin);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let signer2 = Address::generate(&env);
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+    signers.push_back(signer2.clone());
+
+    let amount = 1000_i128;
+
+    // Mock all auths first
+    env.mock_all_auths();
+
+    token_admin.mint(&signer1, &amount);
+
+    // Create payment requiring 2 signatures
+    let payment_id = client.initiate_multisig_payment(
+        &amount,
+        &token,
+        &recipient,
+        &signers,
+        &2u32,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    // Add only 1 signature
+    client.add_signature(&payment_id, &signer1);
+
+    // Try to execute - should fail
+    let result = client.try_execute_multisig_payment(&payment_id, &signer1);
+    assert_eq!(result, Err(Ok(PaymentError::ThresholdNotMet)));
+}
+
+#[test]
+fn test_cancel_multisig_payment_success() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup
+    let admin = Address::generate(&env);
+    let (token, _, _) = create_token_contract(&env, &admin);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+
+    env.mock_all_auths();
+
+    let payment_id = client.initiate_multisig_payment(
+        &1000_i128,
+        &token,
+        &recipient,
+        &signers,
+        &1u32,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    // Cancel payment
+    let reason = String::from_str(&env, "Test cancellation");
+    client.cancel_multisig_payment(&payment_id, &signer1, &reason);
+
+    // Verify payment was cancelled and removed
+    let result = client.try_get_multisig_payment(&payment_id);
+    assert!(result.is_err()); // Should be removed after cancellation
+}
+
+#[test]
+fn test_batch_execute_payments() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup
+    let admin = Address::generate(&env);
+    let (token, token_client, token_admin) = create_token_contract(&env, &admin);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+
+    let amount = 500_i128;
+
+    // Mock all auths first
+    env.mock_all_auths();
+
+    token_admin.mint(&signer1, &(amount * 3)); // Enough for 3 payments
+
+    // Create multiple payments
+    let mut payment_ids = Vec::new(&env);
+    for _i in 0..3 {
+        let payment_id = client.initiate_multisig_payment(
+            &amount,
+            &token,
+            &recipient,
+            &signers,
+            &1u32,
+            &(env.ledger().timestamp() + 3600),
+        );
+
+        // Add signature
+        client.add_signature(&payment_id, &signer1);
+        payment_ids.push_back(payment_id);
+    }
+
+    // Batch execute
+    let executed = client.batch_execute_payments(&payment_ids, &signer1);
+
+    // Verify all payments were executed
+    assert_eq!(executed.len(), 3);
+
+    // Verify total amount transferred
+    assert_eq!(token_client.balance(&recipient), amount * 3);
+}
+
+#[test]
+fn test_payment_history_retrieval() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup
+    let admin = Address::generate(&env);
+    let (token, _token_client, token_admin) = create_token_contract(&env, &admin);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+
+    let mut signers = Vec::new(&env);
+    signers.push_back(signer1.clone());
+
+    let amount = 1000_i128;
+
+    // Mock all auths first
+    env.mock_all_auths();
+
+    token_admin.mint(&signer1, &amount);
+
+    // Create and execute a payment
+    let payment_id = client.initiate_multisig_payment(
+        &amount,
+        &token,
+        &recipient,
+        &signers,
+        &1u32,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    client.add_signature(&payment_id, &signer1);
+    client.execute_multisig_payment(&payment_id, &signer1);
+
+    // Test payment history retrieval using storage directly
+    let payment_record = env.as_contract(&contract_id, || {
+        let storage = Storage::new(&env);
+        storage.get_payment_record(payment_id)
+    });
+
+    assert!(payment_record.is_some());
+    let record = payment_record.unwrap();
+    assert_eq!(record.payment_id, payment_id);
+    assert_eq!(record.amount, amount);
+    assert_eq!(record.recipient, recipient);
+    assert_eq!(record.status, PaymentStatus::Executed);
 }

@@ -3,7 +3,7 @@ use soroban_sdk::{
     Env, Symbol, Map, Vec, Address,
 };
 use crate::{
-    types::Merchant,
+    types::{Merchant, MultiSigPayment, PaymentRecord},
     error::PaymentError,
 };
 
@@ -12,6 +12,9 @@ use crate::{
 pub enum DataKey {
     Merchants,
     UsedNonces,
+    MultiSigPayments,
+    PaymentHistory,
+    PaymentCounter,
 }
 
 impl DataKey {
@@ -19,6 +22,9 @@ impl DataKey {
         match self {
             DataKey::Merchants => Symbol::new(env, "merchants"),
             DataKey::UsedNonces => Symbol::new(env, "used_nonces"),
+            DataKey::MultiSigPayments => Symbol::new(env, "multisig_payments"),
+            DataKey::PaymentHistory => Symbol::new(env, "payment_history"),
+            DataKey::PaymentCounter => Symbol::new(env, "payment_counter"),
         }
     }
 }
@@ -80,4 +86,68 @@ impl<'a> Storage<'a> {
         used_nonces.get(merchant.clone())
             .unwrap_or_else(|| Vec::new(self.env))
     }
-} 
+
+    // Multi-signature payment storage methods
+    pub fn save_multisig_payment(&self, payment: &MultiSigPayment) {
+        let mut payments = self.get_multisig_payments_map();
+        payments.set(payment.payment_id, payment.clone());
+        self.env.storage().instance().set(
+            &DataKey::MultiSigPayments.as_symbol(self.env),
+            &payments,
+        );
+    }
+
+    pub fn get_multisig_payment(&self, payment_id: u128) -> Result<MultiSigPayment, PaymentError> {
+        let payments = self.get_multisig_payments_map();
+        payments.get(payment_id)
+            .ok_or(PaymentError::PaymentNotFound)
+    }
+
+    pub fn remove_multisig_payment(&self, payment_id: u128) {
+        let mut payments = self.get_multisig_payments_map();
+        payments.remove(payment_id);
+        self.env.storage().instance().set(
+            &DataKey::MultiSigPayments.as_symbol(self.env),
+            &payments,
+        );
+    }
+
+    pub fn archive_payment(&self, record: &PaymentRecord) {
+        let mut history = self.get_payment_history_map();
+        history.set(record.payment_id, record.clone());
+        self.env.storage().instance().set(
+            &DataKey::PaymentHistory.as_symbol(self.env),
+            &history,
+        );
+    }
+
+    #[allow(dead_code)]
+    pub fn get_payment_record(&self, payment_id: u128) -> Option<PaymentRecord> {
+        let history = self.get_payment_history_map();
+        history.get(payment_id)
+    }
+
+    pub fn get_next_payment_id(&self) -> u128 {
+        let current_counter: u128 = self.env.storage().instance()
+            .get(&DataKey::PaymentCounter.as_symbol(self.env))
+            .unwrap_or(0);
+        let next_id = current_counter + 1;
+        self.env.storage().instance().set(
+            &DataKey::PaymentCounter.as_symbol(self.env),
+            &next_id,
+        );
+        next_id
+    }
+
+    fn get_multisig_payments_map(&self) -> Map<u128, MultiSigPayment> {
+        self.env.storage().instance()
+            .get(&DataKey::MultiSigPayments.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env))
+    }
+
+    fn get_payment_history_map(&self) -> Map<u128, PaymentRecord> {
+        self.env.storage().instance()
+            .get(&DataKey::PaymentHistory.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env))
+    }
+}
