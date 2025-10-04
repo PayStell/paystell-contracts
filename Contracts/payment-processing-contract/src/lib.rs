@@ -294,6 +294,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             return Err(PaymentError::ExceedsOriginalAmount);
         }
 
+        // Require merchant authorization for token transfer
+        req.merchant_address.require_auth();
+
         // Transfer from merchant to payer
         let token_client = token::Client::new(&env, &req.token);
         // Optional balance check for clearer error
