@@ -6,7 +6,7 @@ mod error;
 
 use soroban_sdk::{
     contract, contractimpl, token, Address, Env,
-    Vec, BytesN, Bytes, xdr::ToXdr, Symbol, log,
+    Vec, BytesN, Bytes, xdr::ToXdr, Symbol, log, Map,
 };
 
 use crate::{
@@ -156,9 +156,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let storage = Storage::new(&env);
         
         for merchant_address in batch.merchants.iter() {
-            // Verify authorization for each merchant
             merchant_address.require_auth();
-            
             let merchant = Merchant::new(&env, merchant_address.clone());
             storage.save_merchant(&merchant_address, &merchant);
         }
@@ -187,48 +185,46 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     }
 
     fn batch_process_payments(env: Env, batch: BatchPayment) -> Result<(), PaymentError> {
-        // Verify authorization from payer
         batch.payer.require_auth();
 
         let storage = Storage::new(&env);
-        let mut used_nonces = Vec::new(&env);
+        let mut seen: Map<Address, Vec<u32>> = Map::new(&env);
         
-        // Pre-validate all orders
         for order in batch.orders.iter() {
-            // Verify the order hasn't expired
             if env.ledger().timestamp() > order.expiration as u64 {
                 return Err(PaymentError::OrderExpired);
             }
 
-            // Verify merchant exists and is active
             let merchant = storage.get_merchant(&order.merchant_address)?;
             if !merchant.is_active() {
                 return Err(PaymentError::MerchantNotFound);
             }
 
-            // Verify token is supported by merchant
             if !merchant.supports_token(&order.token) {
                 return Err(PaymentError::InvalidToken);
             }
 
-            // Verify the nonce hasn't been used
             if storage.is_nonce_used(&order.merchant_address, order.nonce) {
                 return Err(PaymentError::NonceAlreadyUsed);
             }
             
-            used_nonces.push_back(order.nonce);
+            let mut merchant_nonces = seen.get(order.merchant_address.clone()).unwrap_or(Vec::new(&env));
+            if merchant_nonces.iter().any(|n| n == order.nonce) {
+                return Err(PaymentError::NonceAlreadyUsed);
+            }
+            merchant_nonces.push_back(order.nonce);
+            seen.set(order.merchant_address.clone(), merchant_nonces);
         }
 
-        // Process all payments
-        for order in batch.orders.iter() {
-            // Create optimized message for signature verification
+        for (idx, order) in batch.orders.iter().enumerate() {
             let message = create_optimized_message(&env, &order);
             
-            // Verify signature
             #[cfg(not(test))]
-            env.crypto().ed25519_verify(&batch.merchant_public_key, &message, &batch.signature);
+            {
+                let sig = batch.signatures.get(idx as u32).ok_or(PaymentError::InvalidSignature)?;
+                env.crypto().ed25519_verify(&batch.merchant_public_key, &message, &sig);
+            }
 
-            // Process the payment
             let token_client = token::Client::new(&env, &order.token);
             token_client.transfer(
                 &batch.payer,
@@ -237,9 +233,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             );
         }
 
-        // Batch mark all nonces as used (single storage write)
-        for order in batch.orders.iter() {
-            storage.mark_nonce_used(&order.merchant_address, order.nonce);
+        for (merchant, nonces) in seen.iter() {
+            for nonce in nonces.iter() {
+                storage.mark_nonce_used(&merchant, nonce);
+            }
         }
         
         log!(&env, "payments_batch_processed", batch.payer, batch.orders.len());

@@ -100,7 +100,7 @@ pub struct BatchTokenAddition {
 pub struct BatchPayment {
     pub payer: Address,
     pub orders: Vec<PaymentOrder>,
-    pub signature: soroban_sdk::BytesN<64>,
+    pub signatures: Vec<soroban_sdk::BytesN<64>>,
     pub merchant_public_key: soroban_sdk::BytesN<32>,
 }
 

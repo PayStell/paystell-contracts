@@ -376,13 +376,17 @@ fn test_batch_process_payments() {
         },
     ]);
 
-    let signature = BytesN::from_array(&env, &[4u8; 64]);
-    let merchant_public = BytesN::from_array(&env, &[5u8; 32]);
+    let signatures = Vec::from_array(&env, [
+        BytesN::from_array(&env, &[4u8; 64]),
+        BytesN::from_array(&env, &[5u8; 64]),
+        BytesN::from_array(&env, &[6u8; 64]),
+    ]);
+    let merchant_public = BytesN::from_array(&env, &[7u8; 32]);
 
     let batch = BatchPayment {
         payer: payer.clone(),
         orders: orders.clone(),
-        signature,
+        signatures,
         merchant_public_key: merchant_public,
     };
 
