@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 3,
+    "address": 2,
     "nonce": 0
   },
   "auth": [
@@ -47,13 +47,16 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "add_supported_token",
+              "function_name": "set_merchant_limits",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                  "i128": {
+                    "hi": 0,
+                    "lo": 5000000
+                  }
                 }
               ]
             }
@@ -61,7 +64,8 @@
           "sub_invocations": []
         }
       ]
-    ]
+    ],
+    []
   ],
   "ledger": {
     "protocol_version": 22,
@@ -159,7 +163,7 @@
                                     "val": {
                                       "i128": {
                                         "hi": 0,
-                                        "lo": 1000000000000
+                                        "lo": 5000000
                                       }
                                     }
                                   },
@@ -184,11 +188,7 @@
                                       "symbol": "supported_tokens"
                                     },
                                     "val": {
-                                      "vec": [
-                                        {
-                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                                        }
-                                      ]
+                                      "vec": []
                                     }
                                   },
                                   {

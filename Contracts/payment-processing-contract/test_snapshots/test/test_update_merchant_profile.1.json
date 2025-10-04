@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 3,
+    "address": 2,
     "nonce": 0
   },
   "auth": [
@@ -47,13 +47,82 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "add_supported_token",
+              "function_name": "update_merchant_profile",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "category"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "ECommerce"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "contact_info"
+                      },
+                      "val": {
+                        "string": "updated@merchant.com"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": "Updated description"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "name"
+                      },
+                      "val": {
+                        "string": "Updated Merchant"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "update_category"
+                      },
+                      "val": {
+                        "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "update_contact_info"
+                      },
+                      "val": {
+                        "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "update_description"
+                      },
+                      "val": {
+                        "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "update_name"
+                      },
+                      "val": {
+                        "bool": true
+                      }
+                    }
+                  ]
                 }
               ]
             }
@@ -61,7 +130,8 @@
           "sub_invocations": []
         }
       ]
-    ]
+    ],
+    []
   ],
   "ledger": {
     "protocol_version": 22,
@@ -123,7 +193,7 @@
                                     "val": {
                                       "vec": [
                                         {
-                                          "symbol": "Retail"
+                                          "symbol": "ECommerce"
                                         }
                                       ]
                                     }
@@ -133,7 +203,7 @@
                                       "symbol": "contact_info"
                                     },
                                     "val": {
-                                      "string": "test@merchant.com"
+                                      "string": "updated@merchant.com"
                                     }
                                   },
                                   {
@@ -141,7 +211,7 @@
                                       "symbol": "description"
                                     },
                                     "val": {
-                                      "string": "A test merchant for unit tests"
+                                      "string": "Updated description"
                                     }
                                   },
                                   {
@@ -168,7 +238,7 @@
                                       "symbol": "name"
                                     },
                                     "val": {
-                                      "string": "Test Merchant"
+                                      "string": "Updated Merchant"
                                     }
                                   },
                                   {
@@ -184,11 +254,7 @@
                                       "symbol": "supported_tokens"
                                     },
                                     "val": {
-                                      "vec": [
-                                        {
-                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                                        }
-                                      ]
+                                      "vec": []
                                     }
                                   },
                                   {

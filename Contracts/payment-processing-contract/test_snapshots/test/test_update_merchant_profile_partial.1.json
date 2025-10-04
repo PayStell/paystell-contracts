@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 3,
+    "address": 2,
     "nonce": 0
   },
   "auth": [
@@ -47,13 +47,82 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "add_supported_token",
+              "function_name": "update_merchant_profile",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "category"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "symbol": "Retail"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "contact_info"
+                      },
+                      "val": {
+                        "string": ""
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "description"
+                      },
+                      "val": {
+                        "string": ""
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "name"
+                      },
+                      "val": {
+                        "string": "New Name"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "update_category"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "update_contact_info"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "update_description"
+                      },
+                      "val": {
+                        "bool": false
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "update_name"
+                      },
+                      "val": {
+                        "bool": true
+                      }
+                    }
+                  ]
                 }
               ]
             }
@@ -61,7 +130,8 @@
           "sub_invocations": []
         }
       ]
-    ]
+    ],
+    []
   ],
   "ledger": {
     "protocol_version": 22,
@@ -168,7 +238,7 @@
                                       "symbol": "name"
                                     },
                                     "val": {
-                                      "string": "Test Merchant"
+                                      "string": "New Name"
                                     }
                                   },
                                   {
@@ -184,11 +254,7 @@
                                       "symbol": "supported_tokens"
                                     },
                                     "val": {
-                                      "vec": [
-                                        {
-                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                                        }
-                                      ]
+                                      "vec": []
                                     }
                                   },
                                   {
