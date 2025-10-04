@@ -3,7 +3,7 @@ use soroban_sdk::{
     Env, Symbol, Map, Vec, Address,
 };
 use crate::{
-    types::Merchant,
+    types::{Merchant, NonceTracker},
     error::PaymentError,
 };
 
@@ -11,18 +11,24 @@ use crate::{
 #[derive(Clone)]
 pub enum DataKey {
     Merchants,
-    UsedNonces,
+    NonceTrackers,
+    // Cache keys for frequently accessed data
+    MerchantCache,
+    TokenCache,
 }
 
 impl DataKey {
     fn as_symbol(self, env: &Env) -> Symbol {
         match self {
             DataKey::Merchants => Symbol::new(env, "merchants"),
-            DataKey::UsedNonces => Symbol::new(env, "used_nonces"),
+            DataKey::NonceTrackers => Symbol::new(env, "nonce_trackers"),
+            DataKey::MerchantCache => Symbol::new(env, "merchant_cache"),
+            DataKey::TokenCache => Symbol::new(env, "token_cache"),
         }
     }
 }
 
+/// Optimized storage with efficient operations
 pub struct Storage<'a> {
     env: &'a Env,
 }
@@ -32,52 +38,108 @@ impl<'a> Storage<'a> {
         Self { env }
     }
 
-    pub fn save_merchant(&self, address: &Address, merchant: &Merchant) {
-        let mut merchants = self.get_merchants_map();
-        merchants.set(address.clone(), merchant.clone());
-        self.env.storage().instance().set(
-            &DataKey::Merchants.as_symbol(self.env),
-            &merchants,
-        );
-    }
-
-    pub fn get_merchant(&self, address: &Address) -> Result<Merchant, PaymentError> {
-        let merchants = self.get_merchants_map();
-        merchants.get(address.clone())
-            .ok_or(PaymentError::MerchantNotFound)
-    }
-
-    pub fn is_nonce_used(&self, merchant: &Address, nonce: u64) -> bool {
-        let nonces = self.get_merchant_nonces(merchant);
-        nonces.contains(&nonce)
-    }
-
-    pub fn mark_nonce_used(&self, merchant: &Address, nonce: u64) {
-        let mut nonces = self.get_merchant_nonces(merchant);
-        nonces.push_back(nonce);
-        let mut used_nonces = self.get_used_nonces_map();
-        used_nonces.set(merchant.clone(), nonces);
-        self.env.storage().instance().set(
-            &DataKey::UsedNonces.as_symbol(self.env),
-            &used_nonces,
-        );
-    }
-
+    /// Get merchants map
     fn get_merchants_map(&self) -> Map<Address, Merchant> {
         self.env.storage().instance()
             .get(&DataKey::Merchants.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
     }
 
-    fn get_used_nonces_map(&self) -> Map<Address, Vec<u64>> {
+    /// Get nonce trackers map
+    fn get_nonce_trackers_map(&self) -> Map<Address, NonceTracker> {
         self.env.storage().instance()
-            .get(&DataKey::UsedNonces.as_symbol(self.env))
+            .get(&DataKey::NonceTrackers.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
     }
 
-    fn get_merchant_nonces(&self, merchant: &Address) -> Vec<u64> {
-        let used_nonces = self.get_used_nonces_map();
-        used_nonces.get(merchant.clone())
-            .unwrap_or_else(|| Vec::new(self.env))
+    /// Save merchant with optimized storage
+    pub fn save_merchant(&self, address: &Address, merchant: &Merchant) {
+        let mut merchants = self.get_merchants_map();
+        merchants.set(address.clone(), merchant.clone());
+        
+        // Persist to storage
+        self.env.storage().instance().set(
+            &DataKey::Merchants.as_symbol(self.env),
+            &merchants,
+        );
+    }
+
+    /// Get merchant
+    pub fn get_merchant(&self, address: &Address) -> Result<Merchant, PaymentError> {
+        let merchants = self.get_merchants_map();
+        merchants.get(address.clone())
+            .ok_or(PaymentError::MerchantNotFound)
+    }
+
+    /// Check if nonce is used with bitmap optimization
+    pub fn is_nonce_used(&self, merchant: &Address, nonce: u32) -> bool {
+        let trackers = self.get_nonce_trackers_map();
+        if let Some(tracker) = trackers.get(merchant.clone()) {
+            tracker.is_nonce_used(nonce)
+        } else {
+            false
+        }
+    }
+
+    /// Mark nonce as used with bitmap optimization
+    pub fn mark_nonce_used(&self, merchant: &Address, nonce: u32) {
+        let mut trackers = self.get_nonce_trackers_map();
+        let mut tracker = trackers.get(merchant.clone())
+            .unwrap_or_else(|| NonceTracker::new(self.env));
+        
+        tracker.mark_nonce_used(nonce);
+        trackers.set(merchant.clone(), tracker);
+        
+        // Persist to storage
+        self.env.storage().instance().set(
+            &DataKey::NonceTrackers.as_symbol(self.env),
+            &trackers,
+        );
+    }
+
+    /// Batch save multiple merchants (gas optimization)
+    pub fn batch_save_merchants(&self, merchants_data: &[(Address, Merchant)]) {
+        let mut merchants = self.get_merchants_map();
+        
+        for (address, merchant) in merchants_data {
+            merchants.set(address.clone(), merchant.clone());
+        }
+        
+        // Single storage write for all merchants
+        self.env.storage().instance().set(
+            &DataKey::Merchants.as_symbol(self.env),
+            &merchants,
+        );
+    }
+
+    /// Batch mark multiple nonces as used (gas optimization)
+    pub fn batch_mark_nonces_used(&self, merchant: &Address, nonces: &[u32]) {
+        let mut trackers = self.get_nonce_trackers_map();
+        let mut tracker = trackers.get(merchant.clone())
+            .unwrap_or_else(|| NonceTracker::new(self.env));
+        
+        for &nonce in nonces {
+            tracker.mark_nonce_used(nonce);
+        }
+        
+        trackers.set(merchant.clone(), tracker);
+        
+        // Single storage write
+        self.env.storage().instance().set(
+            &DataKey::NonceTrackers.as_symbol(self.env),
+            &trackers,
+        );
+    }
+
+    /// Get merchant count (for gas estimation)
+    pub fn get_merchant_count(&self) -> u32 {
+        let merchants = self.get_merchants_map();
+        merchants.len() as u32
+    }
+
+    /// Get nonce tracker for a merchant
+    pub fn get_nonce_tracker(&self, merchant: &Address) -> Option<NonceTracker> {
+        let trackers = self.get_nonce_trackers_map();
+        trackers.get(merchant.clone())
     }
 } 
