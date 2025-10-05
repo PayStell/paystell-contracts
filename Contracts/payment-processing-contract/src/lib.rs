@@ -234,9 +234,20 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         }
 
         for (merchant, nonces) in seen.iter() {
+            let mut collected = Vec::new(&env);
             for nonce in nonces.iter() {
-                storage.mark_nonce_used(&merchant, nonce);
+                collected.push_back(nonce);
             }
+            // Convert to array for batch operation
+            let mut nonces_array = [0u32; 100];
+            let mut i = 0;
+            for nonce in collected.iter() {
+                if i < 100 {
+                    nonces_array[i] = nonce;
+                    i += 1;
+                }
+            }
+            storage.batch_mark_nonces_used(&merchant, &nonces_array[..i]);
         }
         
         log!(&env, "payments_batch_processed", batch.payer, batch.orders.len());
@@ -269,12 +280,15 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
     fn estimate_gas_for_batch_operation(env: Env, operation_type: Symbol, item_count: u32) -> Result<GasEstimate, PaymentError> {
         let base_gas = 20_000u64;
-        // Use a simple approach for gas estimation based on operation type
-        let per_item_gas = if operation_type == Symbol::new(&env, "register_merchants") {
+        let register_merchants = Symbol::new(&env, "reg_mer");
+        let add_tokens = Symbol::new(&env, "add_tok");
+        let process_payments = Symbol::new(&env, "proc_pay");
+        
+        let per_item_gas = if operation_type == register_merchants {
             15_000u64
-        } else if operation_type == Symbol::new(&env, "add_tokens") {
+        } else if operation_type == add_tokens {
             8_000u64
-        } else if operation_type == Symbol::new(&env, "process_payments") {
+        } else if operation_type == process_payments {
             40_000u64
         } else {
             10_000u64

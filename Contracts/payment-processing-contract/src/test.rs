@@ -433,7 +433,7 @@ fn test_gas_estimation() {
 
     // Test batch operation gas estimation
     let batch_estimate = client.estimate_gas_for_batch_operation(
-        &Symbol::new(&env, "process_payments"),
+        &Symbol::new(&env, "proc_pay"),
         &3
     );
     assert!(batch_estimate.total_estimated > estimate.total_estimated);
