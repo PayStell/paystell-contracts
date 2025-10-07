@@ -259,13 +259,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         admin.require_auth();
 
         let storage = Storage::new(&env);
-        let current_admin = storage.get_admin().unwrap_or_else(|| panic_with_error!(env, PaymentError::AdminNotFound));
-
-        // let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
-        if current_admin != admin {
-            return Err(PaymentError::NotAuthorized);
-        }
-        storage.set_pause_admin_internal(&new_admin);
+        let _  = storage.set_pause_admin_internal(admin, new_admin);
         Ok(())
     }
 

@@ -43,11 +43,14 @@ impl<'a> Storage<'a> {
         Self { env }
     }
 
-    pub fn set_pause_admin_internal(&self, address: &Address) {
+    pub fn set_pause_admin_internal(&self, admin: Address, new_admin: Address) -> Result<(), PaymentError> {
+        self.require_admin(&admin)?;
+
         self.env.storage().instance().set(
             &DataKey::PausedAdmin.as_symbol(self.env),
-            &address,
+            &new_admin,
         );
+        Ok(())
     }
 
     pub fn set_pause_until(&self, timestamp: u64) {
