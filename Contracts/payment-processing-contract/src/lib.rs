@@ -6,7 +6,7 @@ mod types;
 
 use soroban_sdk::{
     contract, contractimpl, token, Address, Env,
-    Vec, BytesN, Bytes, xdr::ToXdr, Symbol, log, Map, panic_with_error,
+    Vec, BytesN, Bytes, xdr::ToXdr, Map, log, String, Symbol, panic_with_error,
 };
 // Note: In Soroban, we use the standard Vec from soroban_sdk, not alloc::vec
 
@@ -14,7 +14,7 @@ use crate::{
     error::PaymentError,
     types::{
         Merchant, PaymentOrder, BatchMerchantRegistration, BatchTokenAddition, 
-        BatchPayment, GasEstimate, NonceTracker, Fee
+        BatchPayment, GasEstimate, NonceTracker, Fee, MultiSigPayment, PaymentStatus, PaymentRecord
     },
     storage::Storage,
 };
@@ -23,8 +23,7 @@ use crate::{
 pub trait PaymentProcessingTrait {
     // Merchant Management Operations
     fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError>;
-    fn add_supported_token(env: Env, merchant: Address, token: Address)
-        -> Result<(), PaymentError>;
+    fn add_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError>;
 
     // Fee Management Operations
     fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError>;
@@ -64,6 +63,47 @@ pub trait PaymentProcessingTrait {
     fn remove_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError>;
     fn deactivate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError>;
     fn activate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError>;
+
+    // Multi-signature Payment Operations
+    fn initiate_multisig_payment(
+        env: Env,
+        amount: i128,
+        token: Address,
+        recipient: Address,
+        signers: Vec<Address>,
+        threshold: u32,
+        expiry: u64,
+    ) -> Result<u128, PaymentError>;
+
+    fn add_signature(
+        env: Env,
+        payment_id: u128,
+        signer: Address,
+    ) -> Result<(), PaymentError>;
+
+    fn execute_multisig_payment(
+        env: Env,
+        payment_id: u128,
+        executor: Address,
+    ) -> Result<(), PaymentError>;
+
+    fn cancel_multisig_payment(
+        env: Env,
+        payment_id: u128,
+        canceller: Address,
+        reason: String,
+    ) -> Result<(), PaymentError>;
+
+    fn get_multisig_payment(
+        env: Env,
+        payment_id: u128,
+    ) -> Result<MultiSigPayment, PaymentError>;
+
+    fn batch_execute_payments(
+        env: Env,
+        payment_ids: Vec<u128>,
+        executor: Address,
+    ) -> Result<Vec<u128>, PaymentError>;
 
     // Pause Management Operations
     fn set_pause_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), PaymentError>;
@@ -141,7 +181,6 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok(())
     }
 
-
     fn add_supported_token(
         env: Env,
         merchant: Address,
@@ -202,11 +241,11 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         }
 
         // Optimized message construction using pre-allocated bytes
-        let message = create_optimized_message(&env, &order);
+        let _message = create_optimized_message(&env, &order);
         // Verify signature
         #[cfg(not(test))]
         env.crypto()
-            .ed25519_verify(&_merchant_public_key, &message, &_signature);
+            .ed25519_verify(&_merchant_public_key, &_message, &_signature);
 
         // Get fee information
         let fee_collector = storage
@@ -332,13 +371,13 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             seen.set(order.merchant_address.clone(), merchant_nonces);
         }
 
-        for (idx, order) in batch.orders.iter().enumerate() {
-            let message = create_optimized_message(&env, &order);
+        for (_idx, order) in batch.orders.iter().enumerate() {
+            let _message = create_optimized_message(&env, &order);
             
             #[cfg(not(test))]
             {
-                let sig = batch.signatures.get(idx as u32).ok_or(PaymentError::InvalidSignature)?;
-                env.crypto().ed25519_verify(&batch.merchant_public_key, &message, &sig);
+                let sig = batch.signatures.get(_idx as u32).ok_or(PaymentError::InvalidSignature)?;
+                env.crypto().ed25519_verify(&batch.merchant_public_key, &_message, &sig);
             }
 
             let token_client = token::Client::new(&env, &order.token);
@@ -490,6 +529,247 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok(())
     }
 
+    // Multi-signature Payment Operations
+    fn initiate_multisig_payment(
+        env: Env,
+        amount: i128,
+        token: Address,
+        recipient: Address,
+        signers: Vec<Address>,
+        threshold: u32,
+        expiry: u64,
+    ) -> Result<u128, PaymentError> {
+        // Validate inputs
+        if amount <= 0 {
+            return Err(PaymentError::InvalidAmount);
+        }
+
+        if signers.is_empty() {
+            return Err(PaymentError::EmptySignersList);
+        }
+
+        if threshold == 0 || threshold > signers.len() {
+            return Err(PaymentError::InvalidThreshold);
+        }
+
+        if expiry <= env.ledger().timestamp() {
+            return Err(PaymentError::PaymentExpired);
+        }
+
+        // Check for duplicate signers
+        for i in 0..signers.len() {
+            for j in (i + 1)..signers.len() {
+                if signers.get(i).unwrap() == signers.get(j).unwrap() {
+                    return Err(PaymentError::DuplicateSigner);
+                }
+            }
+        }
+
+        let storage = Storage::new(&env);
+        let payment_id = storage.get_next_payment_id();
+
+        // Create new multi-sig payment
+        let payment = MultiSigPayment {
+            payment_id,
+            amount,
+            token: token.clone(),
+            recipient: recipient.clone(),
+            signers: signers.clone(),
+            threshold,
+            signatures: Map::new(&env),
+            status: PaymentStatus::Pending,
+            expiry,
+            created_at: env.ledger().timestamp(),
+            reason: None,
+        };
+
+        // Save payment
+        storage.save_multisig_payment(&payment);
+
+        // Emit event
+        log!(&env, "PaymentInitiated: payment_id={}, amount={}, recipient={}, threshold={}",
+             payment_id, amount, recipient, threshold);
+
+        Ok(payment_id)
+    }
+
+    fn add_signature(
+        env: Env,
+        payment_id: u128,
+        signer: Address,
+    ) -> Result<(), PaymentError> {
+        // Require authorization from the signer
+        signer.require_auth();
+
+        let storage = Storage::new(&env);
+        let mut payment = storage.get_multisig_payment(payment_id)?;
+
+        // Validate payment status
+        if payment.status != PaymentStatus::Pending {
+            return Err(PaymentError::InvalidStatus);
+        }
+
+        // Check if payment has expired
+        if env.ledger().timestamp() > payment.expiry {
+            return Err(PaymentError::PaymentExpired);
+        }
+
+        // Verify signer is in the signers list
+        let mut is_valid_signer = false;
+        for i in 0..payment.signers.len() {
+            if payment.signers.get(i).unwrap() == signer {
+                is_valid_signer = true;
+                break;
+            }
+        }
+
+        if !is_valid_signer {
+            return Err(PaymentError::NotASigner);
+        }
+
+        // Check if already signed
+        if payment.signatures.contains_key(signer.clone()) {
+            return Err(PaymentError::AlreadySigned);
+        }
+
+        // Add signature
+        payment.signatures.set(signer.clone(), true);
+
+        // Save updated payment
+        storage.save_multisig_payment(&payment);
+
+        // Emit event
+        log!(&env, "SignatureAdded: payment_id={}, signer={}, signatures_count={}",
+             payment_id, signer, payment.signatures.len());
+
+        Ok(())
+    }
+
+    fn execute_multisig_payment(
+        env: Env,
+        payment_id: u128,
+        executor: Address,
+    ) -> Result<(), PaymentError> {
+        // Require authorization from the executor
+        executor.require_auth();
+
+        let storage = Storage::new(&env);
+
+        // Use the helper function for execution
+        Self::execute_single_payment(&env, &storage, payment_id, &executor)?;
+
+        // Emit event
+        log!(&env, "PaymentExecuted: payment_id={}, executor={}",
+             payment_id, executor);
+
+        Ok(())
+    }
+
+    fn cancel_multisig_payment(
+        env: Env,
+        payment_id: u128,
+        canceller: Address,
+        reason: String,
+    ) -> Result<(), PaymentError> {
+        // Require authorization from the canceller
+        canceller.require_auth();
+
+        let storage = Storage::new(&env);
+        let mut payment = storage.get_multisig_payment(payment_id)?;
+
+        // Validate payment status - can only cancel pending payments
+        if payment.status != PaymentStatus::Pending {
+            return match payment.status {
+                PaymentStatus::Executed => Err(PaymentError::AlreadyExecuted),
+                PaymentStatus::Cancelled => Err(PaymentError::AlreadyCancelled),
+                _ => Err(PaymentError::InvalidStatus),
+            };
+        }
+
+        // Verify canceller is a signer (only signers can cancel)
+        let mut is_valid_canceller = false;
+        for i in 0..payment.signers.len() {
+            if payment.signers.get(i).unwrap() == canceller {
+                is_valid_canceller = true;
+                break;
+            }
+        }
+
+        if !is_valid_canceller {
+            return Err(PaymentError::NotASigner);
+        }
+
+        // Update payment status and reason
+        payment.status = PaymentStatus::Cancelled;
+        payment.reason = Some(reason.clone());
+
+        // Archive the cancelled payment
+        let record = PaymentRecord {
+            payment_id: payment.payment_id,
+            amount: payment.amount,
+            token: payment.token.clone(),
+            recipient: payment.recipient.clone(),
+            signers: payment.signers.clone(),
+            threshold: payment.threshold,
+            status: PaymentStatus::Cancelled,
+            executed_at: env.ledger().timestamp(),
+            executor: Some(canceller.clone()),
+            reason: Some(reason.clone()),
+        };
+
+        storage.archive_payment(&record);
+        storage.remove_multisig_payment(payment_id);
+
+        // Emit event
+        log!(&env, "PaymentCancelled: payment_id={}, canceller={}, reason={}",
+             payment_id, canceller, reason);
+
+        Ok(())
+    }
+
+    fn get_multisig_payment(
+        env: Env,
+        payment_id: u128,
+    ) -> Result<MultiSigPayment, PaymentError> {
+        let storage = Storage::new(&env);
+        storage.get_multisig_payment(payment_id)
+    }
+
+    fn batch_execute_payments(
+        env: Env,
+        payment_ids: Vec<u128>,
+        executor: Address,
+    ) -> Result<Vec<u128>, PaymentError> {
+        // Require authorization from the executor
+        executor.require_auth();
+
+        let mut executed_payments = Vec::new(&env);
+        let storage = Storage::new(&env);
+
+        // Process each payment
+        for i in 0..payment_ids.len() {
+            let payment_id = payment_ids.get(i).unwrap();
+
+            // Try to execute each payment, continue on errors
+            match Self::execute_single_payment(&env, &storage, payment_id, &executor) {
+                Ok(()) => {
+                    executed_payments.push_back(payment_id);
+                    log!(&env, "BatchExecution: payment_id={} executed successfully", payment_id);
+                }
+                Err(e) => {
+                    log!(&env, "BatchExecution: payment_id={} failed with error={:?}", payment_id, e);
+                    // Continue with other payments even if one fails
+                }
+            }
+        }
+
+        // Emit batch completion event
+        log!(&env, "BatchExecutionCompleted: total_requested={}, executed={}",
+             payment_ids.len(), executed_payments.len());
+
+        Ok(executed_payments)
+    }
+
     // Pause Management Operations
     fn set_pause_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), PaymentError> {
         admin.require_auth();
@@ -606,84 +886,99 @@ fn create_optimized_message(env: &Env, order: &PaymentOrder) -> Bytes {
     message
 }
 
-    
-    fn set_pause_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), PaymentError> {
-        admin.require_auth();
+// Helper functions for multi-signature payments
+impl PaymentProcessingContract {
+    // Helper function for payment completion
+    fn complete_payment(
+        env: &Env,
+        storage: &Storage,
+        payment: &MultiSigPayment,
+        executor: &Address,
+    ) -> Result<(), PaymentError> {
+        // Create payment record for history
+        let record = PaymentRecord {
+            payment_id: payment.payment_id,
+            amount: payment.amount,
+            token: payment.token.clone(),
+            recipient: payment.recipient.clone(),
+            signers: payment.signers.clone(),
+            threshold: payment.threshold,
+            status: PaymentStatus::Executed,
+            executed_at: env.ledger().timestamp(),
+            executor: Some(executor.clone()),
+            reason: None,
+        };
 
-        let storage = Storage::new(&env);
-        let _  = storage.set_pause_admin_internal(admin, new_admin);
+        // Archive the payment record
+        storage.archive_payment(&record);
+
+        // Remove from active payments for cleanup
+        storage.remove_multisig_payment(payment.payment_id);
+
+        // Emit completion event
+        log!(env, "PaymentCompleted: payment_id={}, archived_at={}",
+             payment.payment_id, env.ledger().timestamp());
+
         Ok(())
     }
 
-    fn pause(env: Env, admin: Address) -> Result<(), PaymentError> {
-        admin.require_auth();
-        let storage = Storage::new(&env);
-        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+    // Helper function for single payment execution (used by both single and batch)
+    fn execute_single_payment(
+        env: &Env,
+        storage: &Storage,
+        payment_id: u128,
+        executor: &Address,
+    ) -> Result<(), PaymentError> {
+        let mut payment = storage.get_multisig_payment(payment_id)?;
 
-        if pause_admin != admin {
-            return Err(PaymentError::NotAuthorized);
+        // Validate payment status
+        if payment.status != PaymentStatus::Pending {
+            return match payment.status {
+                PaymentStatus::Executed => Err(PaymentError::AlreadyExecuted),
+                PaymentStatus::Cancelled => Err(PaymentError::AlreadyCancelled),
+                _ => Err(PaymentError::InvalidStatus),
+            };
         }
 
-        if Self::is_paused(&env) {
-            return Err(PaymentError::AlreadyPaused);
+        // Check if payment has expired
+        if env.ledger().timestamp() > payment.expiry {
+            return Err(PaymentError::PaymentExpired);
         }
 
-        storage.set_pause();
+        // Verify executor is a signer
+        let mut is_valid_executor = false;
+        for i in 0..payment.signers.len() {
+            if payment.signers.get(i).unwrap() == *executor {
+                is_valid_executor = true;
+                break;
+            }
+        }
 
-        env.events().publish(
-            (Symbol::new(&env, "contract_paused"), admin),
-            env.ledger().timestamp(),
+        if !is_valid_executor {
+            return Err(PaymentError::NotASigner);
+        }
+
+        // Check if threshold is met
+        if payment.signatures.len() < payment.threshold {
+            return Err(PaymentError::ThresholdNotMet);
+        }
+
+        // Execute the payment using Stellar token contract
+        let token_client = token::Client::new(env, &payment.token);
+
+        // Transfer tokens to recipient
+        token_client.transfer(
+            executor, // The executor must have the tokens or be authorized
+            &payment.recipient,
+            &payment.amount,
         );
+
+        // Update payment status
+        payment.status = PaymentStatus::Executed;
+
+        // Complete the payment (archive and cleanup)
+        Self::complete_payment(env, storage, &payment, executor)?;
+
         Ok(())
     }
-
-    fn pause_for_duration(env: Env, admin: Address, duration: u64) -> Result<(), PaymentError> {
-        admin.require_auth();
-        let storage = Storage::new(&env);
-        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
-
-        if pause_admin != admin {
-            return Err(PaymentError::NotAuthorized);
-        }
-
-        if Self::is_paused(&env) {
-            return Err(PaymentError::AlreadyPaused);
-        }
-
-        let current_time = env.ledger().timestamp();
-        let pause_until = current_time + duration;
-
-        storage.set_pause_until(pause_until);
-
-        env.events().publish(
-            (Symbol::new(&env, "contract_paused"), admin),
-            env.ledger().timestamp(),
-        );
-        Ok(())
-    }
-
-
-    fn unpause(env: Env, admin: Address) -> Result<(), PaymentError> {
-        admin.require_auth();
-        let storage = Storage::new(&env);
-        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
-
-        if pause_admin != admin {
-            return Err(PaymentError::NotAuthorized);
-        }
-        storage.set_unpause();
-        storage.set_pause_until(0);
-
-        env.events().publish(
-            (Symbol::new(&env, "contract_unpaused"), admin),
-            env.ledger().timestamp(),
-        );
-        Ok(())
-    }
-
-    fn is_paused(env: &Env) -> bool {
-        let storage = Storage::new(&env);
-        storage.is_paused()
-    }
-
 }
