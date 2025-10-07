@@ -16,7 +16,6 @@ pub enum PaymentError {
     ContractPaused = 9,
     AlreadyPaused = 10,
     AlreadyInitialized = 11,
-    // AdminNotSet = 8,
     InvalidFeeRate = 12,
 }
 

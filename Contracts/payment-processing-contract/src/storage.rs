@@ -43,16 +43,6 @@ impl<'a> Storage<'a> {
         Self { env }
     }
 
-    pub fn set_initialized(&self) {
-        self.env.storage().instance().set(
-            &DataKey::Initialized.as_symbol(self.env), 
-            &true)
-    }
-
-    pub fn is_initialized(&self) -> bool {
-       self.env.storage().instance().has(&DataKey::Initialized.as_symbol(self.env)) 
-    }
-
     pub fn set_pause_admin_internal(&self, address: &Address) {
         self.env.storage().instance().set(
             &DataKey::PausedAdmin.as_symbol(self.env),

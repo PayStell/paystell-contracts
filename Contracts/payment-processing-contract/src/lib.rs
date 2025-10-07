@@ -20,8 +20,6 @@ use crate::{
 
 /// payment-processing-contract trait defining the core functionality
 pub trait PaymentProcessingTrait {
-    // fn initialize(env: Env, admin: Address) -> Result<(), PaymentError>;
-
     // Merchant Management Operations
     fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError>;
     fn add_supported_token(env: Env, merchant: Address, token: Address)
@@ -58,26 +56,6 @@ pub struct PaymentProcessingContract;
 
 #[contractimpl]
 impl PaymentProcessingTrait for PaymentProcessingContract {
-    // fn initialize(env: Env, admin: Address) -> Result<(), PaymentError> {
-    //     admin.require_auth();
-
-    //     let storage = Storage::new(&env);
-
-    //     if storage.is_initialized() {
-    //         panic_with_error!(env, PaymentError::AlreadyInitialized);
-    //     }
-
-    //     let storage = Storage::new(&env);
-    //     storage.set_initialized();
-    //     storage.set_pause_admin_internal(&admin);
-    //     storage.set_pause_until(0);
-
-    //     env.events().publish(
-    //         (Symbol::new(&env, "contract_initialized"), admin),
-    //         env.ledger().timestamp(),
-    //     );
-    //     Ok(())
-    // }
 
     fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError> {
         let storage = Storage::new(&env);
