@@ -205,6 +205,18 @@ pub struct MultiSigPayment {
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PaymentRecord {
+    pub order_id: String,
+    pub merchant_address: Address,
+    pub payer_address: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub paid_at: u64,
+    pub refunded_amount: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MultiSigPaymentRecord {
     pub payment_id: u128,
     pub amount: i128,
     pub token: Address,
@@ -247,6 +259,30 @@ pub struct LimitsUpdatedEvent {
     pub merchant: Address,
     pub max_transaction_limit: i128,
     pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RefundStatus {
+    Pending,
+    Approved,
+    Rejected,
+    Completed,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct RefundRequest {
+    pub refund_id: String,
+    pub order_id: String,
+    pub merchant_address: Address,
+    pub payer_address: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub reason: String,
+    pub requested_at: u64,
+    pub status: RefundStatus,
+    pub approved_by: Option<Address>,
 }
 
 // Event topics

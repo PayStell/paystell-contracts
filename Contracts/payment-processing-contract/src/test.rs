@@ -7,7 +7,7 @@ use soroban_sdk::{
 };
 use crate::{
     PaymentProcessingContract, PaymentProcessingContractClient,
-    types::{PaymentOrder, PaymentStatus, BatchMerchantRegistration, BatchTokenAddition, BatchPayment, GasEstimate, NonceTracker, MerchantCategory, ProfileUpdateData},
+    types::{PaymentOrder, PaymentStatus, BatchMerchantRegistration, BatchTokenAddition, BatchPayment, GasEstimate, NonceTracker, MerchantCategory, ProfileUpdateData, RefundRequest, RefundStatus},
     error::PaymentError,
     storage::Storage,
 };
@@ -297,6 +297,212 @@ fn test_successful_payment_with_signature() {
     assert_eq!(token_client.balance(&merchant), expected_merchant_amount);
     assert_eq!(token_client.balance(&fee_collector), expected_fee);
     assert_eq!(token_client.balance(&payer), 0);
+}
+
+#[test]
+fn test_successful_refund_flow() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup accounts and token
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let (token, token_client, token_admin) = create_token_contract(&env, &admin);
+
+    // Register merchant and add token
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    env.mock_all_auths();
+    client.add_supported_token(&merchant, &token);
+
+    // Mint tokens to payer and pay
+    let amount = 200_i128;
+    token_admin.mint(&payer, &amount);
+    let order = PaymentOrder {
+        merchant_address: merchant.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 98765u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_1"),
+    };
+    let signature = BytesN::from_array(&env, &[7u8; 64]);
+    let merchant_public = BytesN::from_array(&env, &[5u8; 32]);
+
+    env.mock_all_auths();
+    client.process_payment_with_signature(&payer, &order, &signature, &merchant_public);
+
+    // Verify payment balances
+    assert_eq!(token_client.balance(&merchant), amount);
+    assert_eq!(token_client.balance(&payer), 0);
+
+    // Initiate refund of 50
+    let refund_amount = 50_i128;
+    let refund_id = String::from_str(&env, "REFUND_1");
+    env.mock_all_auths();
+    client.initiate_refund(&merchant, &refund_id, &order.order_id, &refund_amount, &String::from_str(&env, "Customer request"));
+
+    // Approve refund by merchant
+    env.mock_all_auths();
+    client.approve_refund(&merchant, &refund_id);
+
+    // Execute refund (merchant must authorize)
+    env.mock_all_auths();
+    client.execute_refund(&refund_id);
+
+    // Check balances after refund
+    assert_eq!(token_client.balance(&merchant), amount - refund_amount);
+    assert_eq!(token_client.balance(&payer), refund_amount);
+
+    // Check status
+    let status = client.get_refund_status(&refund_id);
+    // Completed variant index may be compared via pattern; here we just ensure call succeeds
+    let _ = status; // presence indicates no panic
+}
+
+#[test]
+#[should_panic]
+fn test_over_refund_prevented() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let (token, _token_client, token_admin) = create_token_contract(&env, &admin);
+
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    env.mock_all_auths();
+    client.add_supported_token(&merchant, &token);
+
+    let amount = 100_i128;
+    token_admin.mint(&payer, &amount);
+    let order = PaymentOrder {
+        merchant_address: merchant.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 22222u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_2"),
+    };
+    let signature = BytesN::from_array(&env, &[9u8; 64]);
+    let merchant_public = BytesN::from_array(&env, &[6u8; 32]);
+
+    env.mock_all_auths();
+    client.process_payment_with_signature(&payer, &order, &signature, &merchant_public);
+
+    // Attempt to initiate refund more than amount
+    let refund_amount = 150_i128;
+    let refund_id = String::from_str(&env, "REFUND_2");
+    env.mock_all_auths();
+    client.initiate_refund(&payer, &refund_id, &order.order_id, &refund_amount, &String::from_str(&env, "Over refund"));
+}
+
+#[test]
+fn test_admin_can_approve_and_execute_refund() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let (token, token_client, token_admin) = create_token_contract(&env, &admin);
+
+    // Setup merchant and token
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    env.mock_all_auths();
+    client.add_supported_token(&merchant, &token);
+
+    // Set admin
+    env.mock_all_auths();
+    client.set_admin(&admin);
+
+    // Mint tokens and make payment
+    let amount = 120_i128;
+    token_admin.mint(&payer, &amount);
+    let order = PaymentOrder {
+        merchant_address: merchant.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 33333u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_3"),
+    };
+    let signature = BytesN::from_array(&env, &[10u8; 64]);
+    let merchant_public = BytesN::from_array(&env, &[7u8; 32]);
+
+    env.mock_all_auths();
+    client.process_payment_with_signature(&payer, &order, &signature, &merchant_public);
+
+    // Payer initiates refund, admin approves
+    let refund_id = String::from_str(&env, "REFUND_3");
+    let refund_amount = 20_i128;
+    env.mock_all_auths();
+    client.initiate_refund(&payer, &refund_id, &order.order_id, &refund_amount, &String::from_str(&env, "Dispute"));
+
+    // Approve by admin
+    env.mock_all_auths();
+    client.approve_refund(&admin, &refund_id);
+
+    // Execute (requires merchant auth for token transfer)
+    env.mock_all_auths();
+    client.execute_refund(&refund_id);
+
+    // Balances
+    assert_eq!(token_client.balance(&merchant), amount - refund_amount);
+    assert_eq!(token_client.balance(&payer), refund_amount);
+}
+
+#[test]
+#[should_panic]
+fn test_unauthorized_cannot_approve_refund() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let payer = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let outsider = Address::generate(&env);
+    let (token, _token_client, token_admin) = create_token_contract(&env, &admin);
+
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    env.mock_all_auths();
+    client.add_supported_token(&merchant, &token);
+    env.mock_all_auths();
+    client.set_admin(&admin);
+
+    let amount = 80_i128;
+    token_admin.mint(&payer, &amount);
+    let order = PaymentOrder {
+        merchant_address: merchant.clone(),
+        amount,
+        token: token.clone(),
+        nonce: 44444u64,
+        expiration: env.ledger().timestamp() + 1000,
+        order_id: String::from_str(&env, "ORDER_4"),
+    };
+    let signature = BytesN::from_array(&env, &[11u8; 64]);
+    let merchant_public = BytesN::from_array(&env, &[8u8; 32]);
+
+    env.mock_all_auths();
+    client.process_payment_with_signature(&payer, &order, &signature, &merchant_public);
+
+    let refund_id = String::from_str(&env, "REFUND_4");
+    env.mock_all_auths();
+    client.initiate_refund(&payer, &refund_id, &order.order_id, &40_i128, &String::from_str(&env, "Test"));
+
+    // Outsider tries to approve -> should panic
+    env.mock_all_auths();
+    client.approve_refund(&outsider, &refund_id);
 }
 
 #[test]

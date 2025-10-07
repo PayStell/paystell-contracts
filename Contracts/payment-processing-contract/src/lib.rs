@@ -18,7 +18,8 @@ use crate::{
         BatchPayment, GasEstimate, NonceTracker, Fee, MultiSigPayment, PaymentStatus, PaymentRecord,
         MerchantCategory, ProfileUpdateData, MerchantRegisteredEvent, ProfileUpdatedEvent, 
         MerchantDeactivatedEvent, LimitsUpdatedEvent, merchant_registered_topic, 
-        profile_updated_topic, merchant_deactivated_topic, limits_updated_topic
+        profile_updated_topic, merchant_deactivated_topic, limits_updated_topic,
+        RefundRequest, RefundStatus, MultiSigPaymentRecord
     },
     storage::Storage,
     helper::{validate_name, validate_description, validate_contact_info, 
@@ -140,6 +141,21 @@ pub trait PaymentProcessingTrait {
     fn pause_for_duration(env: Env, admin: Address, duration: u64) -> Result<(), PaymentError>;
     fn unpause(env: Env, admin: Address) -> Result<(), PaymentError>;
     fn is_paused(env: &Env) -> bool;
+
+    // Refund Management Operations
+    fn initiate_refund(
+        env: Env,
+        caller: Address,
+        refund_id: String,
+        order_id: String,
+        amount: i128,
+        reason: String,
+    ) -> Result<(), PaymentError>;
+
+    fn approve_refund(env: Env, caller: Address, refund_id: String) -> Result<(), PaymentError>;
+    fn reject_refund(env: Env, caller: Address, refund_id: String) -> Result<(), PaymentError>;
+    fn execute_refund(env: Env, refund_id: String) -> Result<(), PaymentError>;
+    fn get_refund_status(env: Env, refund_id: String) -> Result<RefundStatus, PaymentError>;
 }
 
 #[contract]
@@ -400,6 +416,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok(())
     }
 
+
     fn process_payment_with_signature(
         env: Env,
         payer: Address,
@@ -489,6 +506,18 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         // Update merchant's last activity timestamp
         merchant.last_activity_timestamp = env.ledger().timestamp();
         storage.save_merchant(&order.merchant_address, &merchant);
+
+        // Record payment history
+        let payment_record = PaymentRecord {
+            order_id: order.order_id.clone(),
+            merchant_address: order.merchant_address.clone(),
+            payer_address: payer.clone(),
+            token: order.token.clone(),
+            amount: order.amount as i128,
+            paid_at: env.ledger().timestamp(),
+            refunded_amount: 0,
+        };
+        storage.save_payment(&payment_record);
 
         Ok(())
     }
@@ -904,7 +933,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         payment.reason = Some(reason.clone());
 
         // Archive the cancelled payment
-        let record = PaymentRecord {
+        let record = MultiSigPaymentRecord {
             payment_id: payment.payment_id,
             amount: payment.amount,
             token: payment.token.clone(),
@@ -1048,6 +1077,147 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let storage = Storage::new(&env);
         storage.is_paused()
     }
+
+    // Refund Management Operations
+    fn initiate_refund(
+        env: Env,
+        caller: Address,
+        refund_id: String,
+        order_id: String,
+        amount: i128,
+        reason: String,
+    ) -> Result<(), PaymentError> {
+        // Caller may be merchant or payer; require auth
+        caller.require_auth();
+
+        let storage = Storage::new(&env);
+        let payment = storage.get_payment(&order_id)?;
+
+        // Validate caller is merchant or payer of the original payment
+        let is_merchant = caller == payment.merchant_address;
+        let is_payer = caller == payment.payer_address;
+        if !is_merchant && !is_payer {
+            return Err(PaymentError::NotAuthorized);
+        }
+
+        // Validate amount does not exceed remaining refundable
+        let already_refunded = payment.refunded_amount;
+        if amount > payment.amount - already_refunded {
+            return Err(PaymentError::ExceedsOriginalAmount);
+        }
+
+        // Validate refund window (30 days)
+        const MAX_REFUND_WINDOW: u64 = 30 * 24 * 60 * 60;
+        if env.ledger().timestamp() > payment.paid_at + MAX_REFUND_WINDOW {
+            return Err(PaymentError::RefundWindowExceeded);
+        }
+
+        // Create refund request (Pending)
+        let request = RefundRequest {
+            refund_id: refund_id.clone(),
+            order_id: order_id.clone(),
+            merchant_address: payment.merchant_address.clone(),
+            payer_address: payment.payer_address.clone(),
+            token: payment.token.clone(),
+            amount,
+            reason: reason.clone(),
+            requested_at: env.ledger().timestamp(),
+            status: RefundStatus::Pending,
+            approved_by: None,
+        };
+        storage.save_refund(&request);
+
+        // Event
+        env.events().publish(("refund_initiated",), (refund_id.clone(), order_id.clone(), amount));
+        Ok(())
+    }
+
+    fn approve_refund(env: Env, caller: Address, refund_id: String) -> Result<(), PaymentError> {
+        caller.require_auth();
+        let storage = Storage::new(&env);
+        let mut req = storage.get_refund(&refund_id)?;
+
+        // Authorization: merchant of payment or admin
+        let admin = storage.get_admin();
+        let authorized = Some(caller.clone()) == admin || caller == req.merchant_address;
+        if !authorized { return Err(PaymentError::NotAuthorized); }
+
+        if let RefundStatus::Pending = req.status {
+            req.status = RefundStatus::Approved;
+            req.approved_by = Some(caller.clone());
+            storage.update_refund(&req);
+            env.events().publish(("refund_approved",), (refund_id.clone(),));
+            Ok(())
+        } else {
+            Err(PaymentError::InvalidRefundStatus)
+        }
+    }
+
+    fn reject_refund(env: Env, caller: Address, refund_id: String) -> Result<(), PaymentError> {
+        caller.require_auth();
+        let storage = Storage::new(&env);
+        let mut req = storage.get_refund(&refund_id)?;
+        let admin = storage.get_admin();
+        let authorized = Some(caller.clone()) == admin || caller == req.merchant_address;
+        if !authorized { return Err(PaymentError::NotAuthorized); }
+
+        if let RefundStatus::Pending = req.status {
+            req.status = RefundStatus::Rejected;
+            req.approved_by = Some(caller.clone());
+            storage.update_refund(&req);
+            env.events().publish(("refund_rejected",), (refund_id.clone(),));
+            Ok(())
+        } else {
+            Err(PaymentError::InvalidRefundStatus)
+        }
+    }
+
+    fn execute_refund(env: Env, refund_id: String) -> Result<(), PaymentError> {
+        let storage = Storage::new(&env);
+        let mut req = storage.get_refund(&refund_id)?;
+
+        // Must be approved
+        if let RefundStatus::Approved = req.status { } else { return Err(PaymentError::InvalidRefundStatus); }
+
+        // Load payment to update and validate remaining amount again
+        let mut payment = storage.get_payment(&req.order_id)?;
+        if req.amount > payment.amount - payment.refunded_amount {
+            return Err(PaymentError::ExceedsOriginalAmount);
+        }
+
+        // Require merchant authorization for token transfer
+        req.merchant_address.require_auth();
+
+        // Transfer from merchant to payer
+        let token_client = token::Client::new(&env, &req.token);
+        // Optional balance check for clearer error
+        let merchant_balance = token_client.balance(&req.merchant_address);
+        if merchant_balance < req.amount {
+            return Err(PaymentError::InsufficientBalance);
+        }
+        token_client.transfer(
+            &req.merchant_address,
+            &req.payer_address,
+            &req.amount,
+        );
+
+        // Update payment refunded amount
+        payment.refunded_amount = payment.refunded_amount + req.amount;
+        storage.update_payment(&payment);
+
+        // Mark refund completed
+        req.status = RefundStatus::Completed;
+        storage.update_refund(&req);
+
+        env.events().publish(("refund_executed",), (refund_id.clone(), req.amount));
+        Ok(())
+    }
+
+    fn get_refund_status(env: Env, refund_id: String) -> Result<RefundStatus, PaymentError> {
+        let storage = Storage::new(&env);
+        let req = storage.get_refund(&refund_id)?;
+        Ok(req.status)
+    }
 }
 
 /// Optimized message creation for signature verification
@@ -1096,7 +1266,7 @@ impl PaymentProcessingContract {
         executor: &Address,
     ) -> Result<(), PaymentError> {
         // Create payment record for history
-        let record = PaymentRecord {
+        let record = MultiSigPaymentRecord {
             payment_id: payment.payment_id,
             amount: payment.amount,
             token: payment.token.clone(),
