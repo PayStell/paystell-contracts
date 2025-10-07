@@ -1,11 +1,8 @@
-use soroban_sdk::{
-    contracttype,
-    Env, Symbol, Map, Vec, Address,
-};
 use crate::{
-    types::{Merchant, NonceTracker},
+    types::{Merchant, NonceTracker, Fee},
     error::PaymentError,
 };
+use soroban_sdk::{contracttype, Address, Env, Map, Symbol, Vec};
 
 #[contracttype]
 #[derive(Clone)]
@@ -15,6 +12,8 @@ pub enum DataKey {
     // Cache keys for frequently accessed data
     MerchantCache,
     TokenCache,
+    Admin,
+    Fee,
 }
 
 impl DataKey {
@@ -24,6 +23,8 @@ impl DataKey {
             DataKey::NonceTrackers => Symbol::new(env, "nonce_trackers"),
             DataKey::MerchantCache => Symbol::new(env, "merchant_cache"),
             DataKey::TokenCache => Symbol::new(env, "token_cache"),
+            DataKey::Admin => Symbol::new(env, "admin"),
+            DataKey::Fee => Symbol::new(env, "fee"),
         }
     }
 }
@@ -40,7 +41,9 @@ impl<'a> Storage<'a> {
 
     /// Get merchants map
     fn get_merchants_map(&self) -> Map<Address, Merchant> {
-        self.env.storage().instance()
+        self.env
+            .storage()
+            .instance()
             .get(&DataKey::Merchants.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
     }
@@ -142,4 +145,90 @@ impl<'a> Storage<'a> {
         let trackers = self.get_nonce_trackers_map();
         trackers.get(merchant.clone())
     }
-} 
+
+    pub fn set_admin(&self, admin: &Address) {
+        self.env
+            .storage()
+            .instance()
+            .set(&DataKey::Admin.as_symbol(self.env), &admin);
+    }
+
+    fn require_admin(&self, admin: &Address) -> Result<(), PaymentError> {
+        let stored_admin: Address = self
+            .env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin.as_symbol(self.env))
+            .ok_or(PaymentError::AdminNotSet)?;
+
+        if stored_admin != *admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+
+        Ok(())
+    }
+
+    pub fn set_fee_info(&self, fee: &Fee, admin: &Address) -> Result<(), PaymentError> {
+        self.require_admin(admin)?;
+        if fee.fee_rate > 10 {
+            return Err(PaymentError::InvalidFeeRate);
+        }
+        self.env
+            .storage()
+            .instance()
+            .set(&DataKey::Fee.as_symbol(self.env), &fee.clone());
+        self.env.events().publish(
+            ("fee_info_set",),
+            (
+                fee.fee_rate,
+                fee.fee_collector.clone(),
+                fee.fee_token.clone(),
+            ),
+        );
+        Ok(())
+    }
+
+    pub fn get_fee_rate(&self) -> u64 {
+        let fee_info: Option<Fee> = self
+            .env
+            .storage()
+            .instance()
+            .get(&DataKey::Fee.as_symbol(self.env));
+        match fee_info {
+            Some(fee) => fee.fee_rate,
+            None => 0,
+        }
+    }
+
+    pub fn get_fee_collector(&self) -> Option<Address> {
+        let fee_info: Option<Fee> = self
+            .env
+            .storage()
+            .instance()
+            .get(&DataKey::Fee.as_symbol(self.env));
+        fee_info.map(|fee| fee.fee_collector)
+    }
+
+    pub fn get_fee_token(&self) -> Option<Address> {
+        let fee_info: Option<Fee> = self
+            .env
+            .storage()
+            .instance()
+            .get(&DataKey::Fee.as_symbol(self.env));
+        fee_info.map(|fee| fee.fee_token)
+    }
+
+    pub fn calculate_fee(&self, amount: i128) -> i128 {
+        let rate = i128::from(self.get_fee_rate());
+        let quotient = amount / 100;
+        let remainder = amount % 100;
+        quotient * rate + (remainder * rate) / 100
+    }
+
+    pub fn get_admin(&self) -> Option<Address> {
+        self.env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin.as_symbol(self.env))
+    }
+}

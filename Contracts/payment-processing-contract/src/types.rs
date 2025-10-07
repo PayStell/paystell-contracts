@@ -79,6 +79,7 @@ pub struct PaymentOrder {
     pub expiration: u32,
     /// Use compact string representation
     pub order_id: String,
+    pub fee_amount: i128,
 }
 
 /// Batch operation structures for gas optimization
@@ -148,4 +149,12 @@ impl NonceTracker {
             self.highest_nonce = nonce;
         }
     }
-} 
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct Fee {
+    pub fee_rate: u64,
+    pub fee_collector: Address,
+    pub fee_token: Address,
+}
