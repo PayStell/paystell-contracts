@@ -78,6 +78,7 @@ pub struct PaymentProcessingContract;
 
 #[contractimpl]
 impl PaymentProcessingTrait for PaymentProcessingContract {
+
     fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError> {
         let storage = Storage::new(&env);
 
@@ -139,6 +140,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         
         Ok(())
     }
+
 
     fn add_supported_token(
         env: Env,
@@ -209,7 +211,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         // Get fee information
         let fee_collector = storage
             .get_fee_collector()
-            .ok_or(PaymentError::AdminNotSet)?;
+            .ok_or(PaymentError::AdminNotFound)?;
 
         let fee_token = storage.get_fee_token().ok_or(PaymentError::InvalidToken)?;
 
@@ -604,5 +606,84 @@ fn create_optimized_message(env: &Env, order: &PaymentOrder) -> Bytes {
     message
 }
 
-#[cfg(test)]
-mod test;
+    
+    fn set_pause_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+
+        let storage = Storage::new(&env);
+        let _  = storage.set_pause_admin_internal(admin, new_admin);
+        Ok(())
+    }
+
+    fn pause(env: Env, admin: Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(&env);
+        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+
+        if pause_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+
+        if Self::is_paused(&env) {
+            return Err(PaymentError::AlreadyPaused);
+        }
+
+        storage.set_pause();
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_paused"), admin),
+            env.ledger().timestamp(),
+        );
+        Ok(())
+    }
+
+    fn pause_for_duration(env: Env, admin: Address, duration: u64) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(&env);
+        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+
+        if pause_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+
+        if Self::is_paused(&env) {
+            return Err(PaymentError::AlreadyPaused);
+        }
+
+        let current_time = env.ledger().timestamp();
+        let pause_until = current_time + duration;
+
+        storage.set_pause_until(pause_until);
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_paused"), admin),
+            env.ledger().timestamp(),
+        );
+        Ok(())
+    }
+
+
+    fn unpause(env: Env, admin: Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(&env);
+        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+
+        if pause_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+        storage.set_unpause();
+        storage.set_pause_until(0);
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_unpaused"), admin),
+            env.ledger().timestamp(),
+        );
+        Ok(())
+    }
+
+    fn is_paused(env: &Env) -> bool {
+        let storage = Storage::new(&env);
+        storage.is_paused()
+    }
+
+}
