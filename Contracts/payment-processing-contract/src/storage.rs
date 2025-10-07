@@ -211,6 +211,11 @@ impl<'a> Storage<'a> {
         );
     }
 
+    pub fn merchant_exists(&self, address: &Address) -> bool {
+        let merchants = self.get_merchants_map();
+        merchants.contains_key(address.clone())
+    }
+
     /// Get merchant count (for gas estimation)
     pub fn get_merchant_count(&self) -> u32 {
         let merchants = self.get_merchants_map();

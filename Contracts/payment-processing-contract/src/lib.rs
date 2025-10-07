@@ -3,6 +3,7 @@
 mod error;
 mod storage;
 mod types;
+mod helper;
 
 use soroban_sdk::{
     contract, contractimpl, token, Address, Env,
@@ -14,16 +15,46 @@ use crate::{
     error::PaymentError,
     types::{
         Merchant, PaymentOrder, BatchMerchantRegistration, BatchTokenAddition, 
-        BatchPayment, GasEstimate, NonceTracker, Fee, MultiSigPayment, PaymentStatus, PaymentRecord
+        BatchPayment, GasEstimate, NonceTracker, Fee, MultiSigPayment, PaymentStatus, PaymentRecord,
+        MerchantCategory, ProfileUpdateData, MerchantRegisteredEvent, ProfileUpdatedEvent, 
+        MerchantDeactivatedEvent, LimitsUpdatedEvent, merchant_registered_topic, 
+        profile_updated_topic, merchant_deactivated_topic, limits_updated_topic
     },
     storage::Storage,
+    helper::{validate_name, validate_description, validate_contact_info, 
+             validate_transaction_limit, DEFAULT_TRANSACTION_LIMIT},
 };
 
 /// Optimized payment-processing-contract trait with gas optimization features
 pub trait PaymentProcessingTrait {
     // Merchant Management Operations
-    fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError>;
+    fn register_merchant(
+        env: Env,
+        merchant_address: Address,
+        name: String,
+        description: String,
+        contact_info: String,
+        category: MerchantCategory,
+    ) -> Result<(), PaymentError>;
+    
     fn add_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError>;
+
+    // Profile Management Operations
+    fn update_merchant_profile(
+        env: Env,
+        merchant: Address,
+        update_data: ProfileUpdateData,
+    ) -> Result<(), PaymentError>;
+    
+    fn get_merchant_profile(env: Env, merchant: Address) -> Result<Merchant, PaymentError>;
+    
+    fn set_merchant_limits(
+        env: Env,
+        merchant: Address,
+        max_transaction_limit: i128,
+    ) -> Result<(), PaymentError>;
+    
+    fn deactivate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError>;
 
     // Fee Management Operations
     fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError>;
@@ -34,7 +65,6 @@ pub trait PaymentProcessingTrait {
         fee_token: Address,
     ) -> Result<(), PaymentError>;
     fn get_fee_info(env: Env) -> Result<(u64, Address, Address), PaymentError>;
-
     // Payment Processing Operations
     fn process_payment_with_signature(
         env: Env,
@@ -61,7 +91,6 @@ pub trait PaymentProcessingTrait {
 
     // Utility Functions
     fn remove_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError>;
-    fn deactivate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError>;
     fn activate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError>;
 
     // Multi-signature Payment Operations
@@ -161,7 +190,14 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok((rate, collector, token))
     }
 
-    fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError> {
+    fn register_merchant(
+        env: Env,
+        merchant_address: Address,
+        name: String,
+        description: String,
+        contact_info: String,
+        category: MerchantCategory,
+    ) -> Result<(), PaymentError> {
         if Self::is_paused(&env) {
             return Err(PaymentError::ContractPaused);
         }
@@ -170,13 +206,44 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         let storage = Storage::new(&env);
         
-        // Create new merchant record using optimized constructor
-        let merchant = Merchant::new(&env, merchant_address.clone());
+        // Check if merchant already exists
+        if storage.merchant_exists(&merchant_address) {
+            return Err(PaymentError::MerchantAlreadyExists);
+        }
+        
+        // Validate profile data
+        validate_name(&name)?;
+        validate_description(&description)?;
+        validate_contact_info(&contact_info)?;
+        
+        let current_time = env.ledger().timestamp();
+        
+        // Create new merchant record
+        let merchant = Merchant {
+            wallet_address: merchant_address.clone(),
+            active: true,
+            supported_tokens: Vec::new(&env),
+            name: name.clone(),
+            description,
+            contact_info,
+            registration_timestamp: current_time,
+            last_activity_timestamp: current_time,
+            category: category.clone(),
+            max_transaction_limit: DEFAULT_TRANSACTION_LIMIT,
+        };
 
         storage.save_merchant(&merchant_address, &merchant);
         
-        // Emit optimized event
-        log!(&env, "merchant_registered", merchant_address);
+        // Emit registration event
+        env.events().publish(
+            (merchant_registered_topic(&env),),
+            MerchantRegisteredEvent {
+                merchant: merchant_address,
+                name,
+                category,
+                timestamp: current_time,
+            }
+        );
         
         Ok(())
     }
@@ -196,11 +263,140 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let storage = Storage::new(&env);
         let mut merchant_data = storage.get_merchant(&merchant)?;
 
-        // Add token using optimized method
-        if merchant_data.add_token(token.clone()) {
-            storage.save_merchant(&merchant, &merchant_data);
-            log!(&env, "token_added", merchant, token);
+        // Add token to supported list
+        merchant_data.supported_tokens.push_back(token);
+        
+        // Update last activity timestamp
+        merchant_data.last_activity_timestamp = env.ledger().timestamp();
+        
+        storage.save_merchant(&merchant, &merchant_data);
+        Ok(())
+    }
+
+    fn update_merchant_profile(
+        env: Env,
+        merchant: Address,
+        update_data: ProfileUpdateData,
+    ) -> Result<(), PaymentError> {
+        // Verify authorization - only merchant can update their own profile
+        merchant.require_auth();
+
+        let storage = Storage::new(&env);
+        let mut merchant_data = storage.get_merchant(&merchant)?;
+
+        // Check if merchant is active
+        if !merchant_data.active {
+            return Err(PaymentError::MerchantInactive);
         }
+
+        // Update fields if requested
+        if update_data.update_name {
+            validate_name(&update_data.name)?;
+            merchant_data.name = update_data.name;
+        }
+
+        if update_data.update_description {
+            validate_description(&update_data.description)?;
+            merchant_data.description = update_data.description;
+        }
+
+        if update_data.update_contact_info {
+            validate_contact_info(&update_data.contact_info)?;
+            merchant_data.contact_info = update_data.contact_info;
+        }
+
+        if update_data.update_category {
+            merchant_data.category = update_data.category;
+        }
+
+        // Update last activity timestamp
+        let current_time = env.ledger().timestamp();
+        merchant_data.last_activity_timestamp = current_time;
+
+        storage.save_merchant(&merchant, &merchant_data);
+
+        // Emit profile update event
+        env.events().publish(
+            (profile_updated_topic(&env),),
+            ProfileUpdatedEvent {
+                merchant,
+                timestamp: current_time,
+            }
+        );
+
+        Ok(())
+    }
+
+    fn get_merchant_profile(env: Env, merchant: Address) -> Result<Merchant, PaymentError> {
+        let storage = Storage::new(&env);
+        storage.get_merchant(&merchant)
+    }
+
+    fn set_merchant_limits(
+        env: Env,
+        merchant: Address,
+        max_transaction_limit: i128,
+    ) -> Result<(), PaymentError> {
+        // Verify authorization - only merchant can set their own limits
+        merchant.require_auth();
+
+        let storage = Storage::new(&env);
+        let mut merchant_data = storage.get_merchant(&merchant)?;
+
+        // Check if merchant is active
+        if !merchant_data.active {
+            return Err(PaymentError::MerchantInactive);
+        }
+
+        // Validate transaction limit
+        validate_transaction_limit(max_transaction_limit)?;
+
+        merchant_data.max_transaction_limit = max_transaction_limit;
+        
+        // Update last activity timestamp
+        let current_time = env.ledger().timestamp();
+        merchant_data.last_activity_timestamp = current_time;
+
+        storage.save_merchant(&merchant, &merchant_data);
+
+        // Emit limits update event
+        env.events().publish(
+            (limits_updated_topic(&env),),
+            LimitsUpdatedEvent {
+                merchant,
+                max_transaction_limit,
+                timestamp: current_time,
+            }
+        );
+
+        Ok(())
+    }
+
+    fn deactivate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError> {
+        // Verify authorization - only merchant can deactivate their own account
+        merchant.require_auth();
+
+        let storage = Storage::new(&env);
+        let mut merchant_data = storage.get_merchant(&merchant)?;
+
+        // Set merchant as inactive
+        merchant_data.active = false;
+        
+        // Update last activity timestamp
+        let current_time = env.ledger().timestamp();
+        merchant_data.last_activity_timestamp = current_time;
+
+        storage.save_merchant(&merchant, &merchant_data);
+
+        // Emit deactivation event
+        env.events().publish(
+            (merchant_deactivated_topic(&env),),
+            MerchantDeactivatedEvent {
+                merchant,
+                timestamp: current_time,
+            }
+        );
+
         Ok(())
     }
 
@@ -225,9 +421,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let storage = Storage::new(&env);
 
         // Verify merchant exists and is active
-        let merchant = storage.get_merchant(&order.merchant_address)?;
-        if !merchant.is_active() {
-            return Err(PaymentError::MerchantNotFound);
+        let mut merchant = storage.get_merchant(&order.merchant_address)?;
+        if !merchant.active {
+            return Err(PaymentError::MerchantInactive);
         }
 
         // Verify token is supported by merchant (optimized lookup)
@@ -235,7 +431,12 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             return Err(PaymentError::InvalidToken);
         }
 
-        // Verify the nonce hasn't been used (optimized bitmap check)
+        // Verify transaction limit
+        if i128::from(order.amount) > merchant.max_transaction_limit {
+            return Err(PaymentError::TransactionLimitExceeded);
+        }
+
+        // Verify the nonce hasn't been used
         if storage.is_nonce_used(&order.merchant_address, order.nonce) {
             return Err(PaymentError::NonceAlreadyUsed);
         }
@@ -285,8 +486,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         // Record used nonce (optimized bitmap storage)
         storage.mark_nonce_used(&order.merchant_address, order.nonce);
 
-        // Emit optimized event
-        log!(&env, "payment_processed", payer, order.merchant_address, order.amount, order.nonce);
+        // Update merchant's last activity timestamp
+        merchant.last_activity_timestamp = env.ledger().timestamp();
+        storage.save_merchant(&order.merchant_address, &merchant);
 
         Ok(())
     }
@@ -300,7 +502,18 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         
         for merchant_address in batch.merchants.iter() {
             merchant_address.require_auth();
-            let merchant = Merchant::new(&env, merchant_address.clone());
+            let merchant = Merchant {
+                wallet_address: merchant_address.clone(),
+                active: true,
+                supported_tokens: Vec::new(&env),
+                name: String::from_str(&env, "Batch Merchant"),
+                description: String::from_str(&env, "Batch registered merchant"),
+                contact_info: String::from_str(&env, "N/A"),
+                registration_timestamp: env.ledger().timestamp(),
+                last_activity_timestamp: env.ledger().timestamp(),
+                category: MerchantCategory::Other,
+                max_transaction_limit: 1000000, // Default limit
+            };
             storage.save_merchant(&merchant_address, &merchant);
         }
         
@@ -351,7 +564,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             }
 
             let merchant = storage.get_merchant(&order.merchant_address)?;
-            if !merchant.is_active() {
+            if !merchant.active {
                 return Err(PaymentError::MerchantNotFound);
             }
 
@@ -468,7 +681,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     fn get_merchant_token_count(env: Env, merchant: Address) -> Result<u32, PaymentError> {
         let storage = Storage::new(&env);
         let merchant_data = storage.get_merchant(&merchant)?;
-        Ok(merchant_data.token_count)
+        Ok(merchant_data.supported_tokens.len() as u32)
     }
 
     fn is_token_supported(env: Env, merchant: Address, token: Address) -> Result<bool, PaymentError> {
@@ -501,19 +714,6 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok(())
     }
 
-    fn deactivate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError> {
-        merchant.require_auth();
-
-        let storage = Storage::new(&env);
-        let mut merchant_data = storage.get_merchant(&merchant)?;
-
-        merchant_data.set_active(false);
-        storage.save_merchant(&merchant, &merchant_data);
-        
-        log!(&env, "merchant_deactivated", merchant);
-        
-        Ok(())
-    }
 
     fn activate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError> {
         merchant.require_auth();
@@ -521,7 +721,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let storage = Storage::new(&env);
         let mut merchant_data = storage.get_merchant(&merchant)?;
 
-        merchant_data.set_active(true);
+        merchant_data.active = true;
         storage.save_merchant(&merchant, &merchant_data);
         
         log!(&env, "merchant_activated", merchant);
