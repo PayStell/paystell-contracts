@@ -94,10 +94,10 @@
                                 "map": [
                                   {
                                     "key": {
-                                      "symbol": "active"
+                                      "symbol": "flags"
                                     },
                                     "val": {
-                                      "bool": true
+                                      "u32": 1
                                     }
                                   },
                                   {
@@ -105,11 +105,24 @@
                                       "symbol": "supported_tokens"
                                     },
                                     "val": {
-                                      "vec": [
+                                      "map": [
                                         {
-                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                                          "key": {
+                                            "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                                          },
+                                          "val": {
+                                            "bool": true
+                                          }
                                         }
                                       ]
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "token_count"
+                                    },
+                                    "val": {
+                                      "u32": 1
                                     }
                                   },
                                   {
