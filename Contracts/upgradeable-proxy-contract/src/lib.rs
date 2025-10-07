@@ -136,8 +136,18 @@ impl ProxyTrait for UpgradeableProxyContract {
         let store = Storage::new(&env);
         store.require_initialized()?;
         store.require_admin_auth()?;
-        let prev = store.last_history_prev().ok_or(ProxyError::NoRollbackAvailable)?;
-        store.set_implementation(&prev)?;
+        
+        let history_record = store.get_last_history_record().ok_or(ProxyError::NoRollbackAvailable)?;
+        let prev_impl = history_record.prev;
+        let prev_version = history_record.version - 1; // Rollback to previous version
+        
+        // Set implementation and update version
+        store.set_implementation(&prev_impl)?;
+        store.update_version(prev_version);
+        
+        // Remove the last history entry (rollback operation)
+        store.remove_last_history_entry();
+        
         Ok(())
     }
 

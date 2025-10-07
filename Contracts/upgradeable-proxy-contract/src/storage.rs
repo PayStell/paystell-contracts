@@ -78,6 +78,24 @@ impl<'a> Storage<'a> {
         Some(last.prev.clone())
     }
 
+    pub fn get_last_history_record(&self) -> Option<ImplementationRecord> {
+        let history: Vec<ImplementationRecord> = self.env.storage().instance().get(&DataKey::History).unwrap();
+        if history.len() == 0 { return None; }
+        Some(history.get_unchecked(history.len() - 1))
+    }
+
+    pub fn update_version(&self, new_version: u64) {
+        self.env.storage().instance().set(&DataKey::Version, &new_version);
+    }
+
+    pub fn remove_last_history_entry(&self) {
+        let mut history: Vec<ImplementationRecord> = self.env.storage().instance().get(&DataKey::History).unwrap();
+        if history.len() > 0 {
+            history.pop_back();
+            self.env.storage().instance().set(&DataKey::History, &history);
+        }
+    }
+
     pub fn set_last_invoker(&self, invoker: &Address) {
         self.env.storage().instance().set(&DataKey::LastInvoker, invoker);
     }
