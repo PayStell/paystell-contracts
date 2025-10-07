@@ -1,3 +1,5 @@
+use core::clone;
+
 use soroban_sdk::{Env, Address, Vec, Map};
 use crate::{DataKey, error::ProxyError, types::{UpgradeProposal, ImplementationRecord}};
 
@@ -65,7 +67,7 @@ impl<'a> Storage<'a> {
 
     pub fn record_history(&self, rec: ImplementationRecord) {
         let mut history: Vec<ImplementationRecord> = self.env.storage().instance().get(&DataKey::History).unwrap();
-        history.push_back(rec);
+        history.push_back(rec.clone());
         self.env.storage().instance().set(&DataKey::History, &history);
         // Update version to match the recorded history entry
         self.env.storage().instance().set(&DataKey::Version, &rec.version);

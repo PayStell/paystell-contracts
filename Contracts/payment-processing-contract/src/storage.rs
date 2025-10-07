@@ -5,7 +5,6 @@ use crate::{
     error::PaymentError,
     types::{Fee, Merchant},
 };
-use soroban_sdk::{contracttype, Address, Env, Map, Symbol, Vec};
 
 #[contracttype]
 #[derive(Clone)]
@@ -54,7 +53,7 @@ impl<'a> Storage<'a> {
        self.env.storage().instance().has(&DataKey::Initialized.as_symbol(self.env)) 
     }
 
-    pub fn set_pause_admin(&self, address: &Address) {
+    pub fn set_pause_admin_internal(&self, address: &Address) {
         self.env.storage().instance().set(
             &DataKey::PausedAdmin.as_symbol(self.env),
             &address,
@@ -177,7 +176,7 @@ impl<'a> Storage<'a> {
             .storage()
             .instance()
             .get(&DataKey::Admin.as_symbol(self.env))
-            .ok_or(PaymentError::AdminNotSet)?;
+            .ok_or(PaymentError::AdminNotFound)?;
 
         if stored_admin != *admin {
             return Err(PaymentError::NotAuthorized);

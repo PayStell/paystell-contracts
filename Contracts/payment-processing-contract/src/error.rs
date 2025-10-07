@@ -16,8 +16,8 @@ pub enum PaymentError {
     ContractPaused = 9,
     AlreadyPaused = 10,
     AlreadyInitialized = 11,
-    AdminNotSet = 8,
-    InvalidFeeRate = 9,
+    // AdminNotSet = 8,
+    InvalidFeeRate = 12,
 }
 
 impl fmt::Display for PaymentError {
@@ -34,7 +34,7 @@ impl fmt::Display for PaymentError {
             PaymentError::ContractPaused => write!(f, "Contract is paused"),
             PaymentError::AlreadyPaused => write!(f, "Contract is already paused"),
             PaymentError::AlreadyInitialized => write!(f, "Contract is already initialized"),
-            PaymentError::AdminNotSet => write!(f, "Admin is not set"),
+            // PaymentError::AdminNotSet => write!(f, "Admin is not set"),
             PaymentError::InvalidFeeRate => write!(f, "Invalid fee rate"),
         }
     }
