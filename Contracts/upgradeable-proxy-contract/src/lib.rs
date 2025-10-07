@@ -59,6 +59,11 @@ impl ProxyTrait for UpgradeableProxyContract {
         let store = Storage::new(&env);
         store.require_initialized()?;
         store.require_admin_auth()?; // any admin can auth (mock_all_auths in tests)
+        
+        // Get the current invoker and store it
+        let current_invoker = env.current_contract_address();
+        store.set_last_invoker(&current_invoker);
+        
         // create proposal id incrementally
         let id = store.next_proposal_id();
         let ledger_ts = env.ledger().timestamp();
@@ -160,6 +165,7 @@ pub enum DataKey {
     Proposals,
     ProposalSeq,
     History,
+    LastInvoker,
 }
 
 #[cfg(test)]

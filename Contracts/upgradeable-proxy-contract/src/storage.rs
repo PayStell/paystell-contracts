@@ -13,11 +13,15 @@ impl<'a> Storage<'a> {
         self.env.storage().instance().set(&DataKey::Admins, &admins);
         self.env.storage().instance().set(&DataKey::Threshold, &threshold);
         self.env.storage().instance().set(&DataKey::Delay, &delay);
-    // implementation not set initially
+        // implementation not set initially
         let version: u64 = 0; self.env.storage().instance().set(&DataKey::Version, &version);
         let seq: u64 = 0; self.env.storage().instance().set(&DataKey::ProposalSeq, &seq);
         let history: Vec<ImplementationRecord> = Vec::new(self.env); self.env.storage().instance().set(&DataKey::History, &history);
         let proposals: Map<u64, UpgradeProposal> = Map::new(self.env); self.env.storage().instance().set(&DataKey::Proposals, &proposals);
+        // Initialize last invoker to first admin as fallback
+        if admins.len() > 0 {
+            self.env.storage().instance().set(&DataKey::LastInvoker, &admins.get_unchecked(0));
+        }
     }
 
     pub fn require_admin_auth(&self) -> Result<(), ProxyError> {
@@ -74,9 +78,12 @@ impl<'a> Storage<'a> {
         Some(last.prev.clone())
     }
 
+    pub fn set_last_invoker(&self, invoker: &Address) {
+        self.env.storage().instance().set(&DataKey::LastInvoker, invoker);
+    }
+
     pub fn last_invoker(&self) -> Result<Address, ProxyError> {
-        let admins: Vec<Address> = self.env.storage().instance().get(&DataKey::Admins).unwrap();
-        if admins.len() == 0 { return Err(ProxyError::StorageError); }
-        Ok(admins.get_unchecked(0))
+        self.env.storage().instance().get(&DataKey::LastInvoker)
+            .ok_or(ProxyError::StorageError)
     }
 }
