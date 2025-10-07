@@ -9,7 +9,7 @@ use crate::{
     PaymentProcessingContract, PaymentProcessingContractClient, 
     types::{
         PaymentOrder, BatchMerchantRegistration, BatchTokenAddition, 
-        BatchPayment, GasEstimate
+        BatchPayment
     }
 };
 
@@ -143,12 +143,12 @@ fn test_payment_with_fees() {
     // Create payment order
     let order = PaymentOrder {
         merchant_address: merchant.clone(),
-        amount: payment_amount,
+        amount: payment_amount as i64,
         token: token.clone(),
-        nonce: 12345u64,
-        expiration: env.ledger().timestamp() + 1000,
-        order_id: String::from_str(&env, "TEST_ORDER_1"),
+        nonce: 12345u32,
+        expiration: (env.ledger().timestamp() + 1000) as u32,
         fee_amount: 0, // Initial fee amount, will be calculated during processing
+        order_id: String::from_str(&env, "TEST_ORDER_1"),
     };
 
     // Process payment
@@ -240,11 +240,6 @@ fn test_successful_payment_with_signature() {
     client.register_merchant(&merchant);
     env.mock_all_auths();
     client.add_supported_token(&merchant, &token);
-<<<<<<< HEAD
-    
-    // Create payment order with fixed values
-    let order =     PaymentOrder {
-=======
 
     // Set up fee management
     env.mock_all_auths();
@@ -254,7 +249,6 @@ fn test_successful_payment_with_signature() {
 
     // Create payment order
     let order = PaymentOrder {
->>>>>>> upstream/main
         merchant_address: merchant.clone(),
         amount: amount as i64,
         token: token.clone(),
@@ -362,15 +356,8 @@ fn test_duplicate_nonce() {
     client.add_supported_token(&merchant, &token);
 
     // Create order
-<<<<<<< HEAD
     let expiration = (env.ledger().timestamp() + 1000) as u32;
     let order = create_payment_order(&env, &merchant, amount as i64, &token, expiration);
-    
-=======
-    let expiration = env.ledger().timestamp() + 1000;
-    let order = create_payment_order(&env, &merchant, amount, &token, expiration);
-
->>>>>>> upstream/main
     // Create test signature
     let signature = BytesN::from_array(&env, &[3u8; 64]); // Test signature
 
@@ -516,6 +503,7 @@ fn test_batch_process_payments() {
             nonce: 1,
             expiration: (env.ledger().timestamp() + 1000) as u32,
             order_id: String::from_str(&env, "ORDER_1"),
+            fee_amount: 0,
         },
         PaymentOrder {
             merchant_address: merchant.clone(),
@@ -524,6 +512,7 @@ fn test_batch_process_payments() {
             nonce: 2,
             expiration: (env.ledger().timestamp() + 1000) as u32,
             order_id: String::from_str(&env, "ORDER_2"),
+            fee_amount: 0,
         },
         PaymentOrder {
             merchant_address: merchant.clone(),
@@ -532,6 +521,7 @@ fn test_batch_process_payments() {
             nonce: 3,
             expiration: (env.ledger().timestamp() + 1000) as u32,
             order_id: String::from_str(&env, "ORDER_3"),
+            fee_amount: 0,
         },
     ]);
 
@@ -582,6 +572,7 @@ fn test_gas_estimation() {
         nonce: 1,
         expiration: (env.ledger().timestamp() + 1000) as u32,
         order_id: String::from_str(&env, "TEST_ORDER"),
+        fee_amount: 0,
     };
 
     // Test payment gas estimation
@@ -707,6 +698,12 @@ fn test_nonce_bitmap_optimization() {
     client.register_merchant(&merchant);
     client.add_supported_token(&merchant, &token);
 
+    // Set up fee management
+    env.mock_all_auths();
+    client.set_admin(&admin);
+    env.mock_all_auths();
+    client.set_fee(&0, &admin, &token); // 0% fee for this test
+
     // Setup token balance
     token_admin.mint(&payer, &1000);
 
@@ -722,6 +719,7 @@ fn test_nonce_bitmap_optimization() {
             nonce: i,
             expiration: (env.ledger().timestamp() + 1000) as u32,
             order_id: String::from_str(&env, "ORDER_TEST"),
+            fee_amount: 0,
         };
 
         env.mock_all_auths();

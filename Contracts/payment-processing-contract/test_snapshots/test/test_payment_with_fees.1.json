@@ -153,10 +153,7 @@
                         "symbol": "amount"
                       },
                       "val": {
-                        "i128": {
-                          "hi": 0,
-                          "lo": 1000
-                        }
+                        "i64": 1000
                       }
                     },
                     {
@@ -164,7 +161,7 @@
                         "symbol": "expiration"
                       },
                       "val": {
-                        "u64": 1000
+                        "u32": 1000
                       }
                     },
                     {
@@ -191,7 +188,7 @@
                         "symbol": "nonce"
                       },
                       "val": {
-                        "u64": 12345
+                        "u32": 12345
                       }
                     },
                     {
@@ -425,10 +422,10 @@
                                 "map": [
                                   {
                                     "key": {
-                                      "symbol": "active"
+                                      "symbol": "flags"
                                     },
                                     "val": {
-                                      "bool": true
+                                      "u32": 1
                                     }
                                   },
                                   {
@@ -436,11 +433,24 @@
                                       "symbol": "supported_tokens"
                                     },
                                     "val": {
-                                      "vec": [
+                                      "map": [
                                         {
-                                          "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
+                                          "key": {
+                                            "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
+                                          },
+                                          "val": {
+                                            "bool": true
+                                          }
                                         }
                                       ]
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "token_count"
+                                    },
+                                    "val": {
+                                      "u32": 1
                                     }
                                   },
                                   {
@@ -459,7 +469,7 @@
                       },
                       {
                         "key": {
-                          "symbol": "used_nonces"
+                          "symbol": "nonce_trackers"
                         },
                         "val": {
                           "map": [
@@ -468,9 +478,31 @@
                                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                               },
                               "val": {
-                                "vec": [
+                                "map": [
                                   {
-                                    "u64": 12345
+                                    "key": {
+                                      "symbol": "highest_nonce"
+                                    },
+                                    "val": {
+                                      "u32": 12345
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "nonce_bitmap"
+                                    },
+                                    "val": {
+                                      "map": [
+                                        {
+                                          "key": {
+                                            "u32": 385
+                                          },
+                                          "val": {
+                                            "u32": 33554432
+                                          }
+                                        }
+                                      ]
+                                    }
                                   }
                                 ]
                               }
