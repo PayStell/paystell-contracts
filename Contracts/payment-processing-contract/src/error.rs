@@ -1,10 +1,11 @@
-use soroban_sdk::contracterror;
 use core::fmt;
+use soroban_sdk::contracterror;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum PaymentError {
+    // Common
     NotAuthorized = 1,
     MerchantNotFound = 2,
     InvalidSignature = 3,
@@ -12,24 +13,33 @@ pub enum PaymentError {
     InvalidAmount = 5,
     OrderExpired = 6,
     InvalidToken = 7,
+
+    // Admin / contract management
+    AdminNotFound = 8,
+    ContractPaused = 9,
+    AlreadyPaused = 10,
+    AlreadyInitialized = 11,
+    InvalidFeeRate = 12,
+
     // Multi-signature specific errors
-    PaymentNotFound = 8,
-    InvalidThreshold = 9,
-    ThresholdNotMet = 10,
-    AlreadyExecuted = 11,
-    AlreadyCancelled = 12,
-    PaymentExpired = 13,
-    AlreadySigned = 14,
-    NotASigner = 15,
-    InvalidStatus = 16,
-    EmptySignersList = 17,
-    DuplicateSigner = 18,
-    InvalidPaymentId = 19,
+    PaymentNotFound = 13,
+    InvalidThreshold = 14,
+    ThresholdNotMet = 15,
+    AlreadyExecuted = 16,
+    AlreadyCancelled = 17,
+    PaymentExpired = 18,
+    AlreadySigned = 19,
+    NotASigner = 20,
+    InvalidStatus = 21,
+    EmptySignersList = 22,
+    DuplicateSigner = 23,
+    InvalidPaymentId = 24,
 }
 
 impl fmt::Display for PaymentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            // Common
             PaymentError::NotAuthorized => write!(f, "Not authorized"),
             PaymentError::MerchantNotFound => write!(f, "Merchant not found or inactive"),
             PaymentError::InvalidSignature => write!(f, "Invalid merchant signature"),
@@ -37,6 +47,15 @@ impl fmt::Display for PaymentError {
             PaymentError::InvalidAmount => write!(f, "Invalid amount"),
             PaymentError::OrderExpired => write!(f, "Payment order has expired"),
             PaymentError::InvalidToken => write!(f, "Token not supported by merchant"),
+
+            // Admin / contract management
+            PaymentError::AdminNotFound => write!(f, "Admin not found"),
+            PaymentError::ContractPaused => write!(f, "Contract is paused"),
+            PaymentError::AlreadyPaused => write!(f, "Contract is already paused"),
+            PaymentError::AlreadyInitialized => write!(f, "Contract is already initialized"),
+            PaymentError::InvalidFeeRate => write!(f, "Invalid fee rate"),
+
+            // Multi-signature
             PaymentError::PaymentNotFound => write!(f, "Multi-signature payment not found"),
             PaymentError::InvalidThreshold => write!(f, "Invalid threshold value"),
             PaymentError::ThresholdNotMet => write!(f, "Signature threshold not met"),
@@ -52,3 +71,4 @@ impl fmt::Display for PaymentError {
         }
     }
 }
+
