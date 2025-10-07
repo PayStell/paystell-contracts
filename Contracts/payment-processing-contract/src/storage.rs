@@ -2,7 +2,7 @@ use soroban_sdk::{
     contracttype, log, Address, Env, Map, Symbol,
 };
 use crate::{
-    types::{Merchant, NonceTracker, Fee, MultiSigPayment, PaymentRecord},
+    types::{Merchant, NonceTracker, Fee, MultiSigPayment, PaymentRecord, RefundRequest, MultiSigPaymentRecord},
     error::PaymentError,
 };
 
@@ -22,6 +22,9 @@ pub enum DataKey {
     PausedUntil,
     Admin,
     Fee,
+    // Payment records and refunds
+    Payments,
+    Refunds,
 }
 
 impl DataKey {
@@ -38,6 +41,8 @@ impl DataKey {
             DataKey::PausedUntil => Symbol::new(env, "paused_until"),
             DataKey::Admin => Symbol::new(env, "admin"),
             DataKey::Fee => Symbol::new(env, "fee"),
+            DataKey::Payments => Symbol::new(env, "payments"),
+            DataKey::Refunds => Symbol::new(env, "refunds"),
         }
     }
 }
@@ -255,7 +260,7 @@ impl<'a> Storage<'a> {
             .set(&DataKey::MultiSigPayments.as_symbol(self.env), &payments);
     }
 
-    pub fn archive_payment(&self, record: &PaymentRecord) {
+    pub fn archive_payment(&self, record: &MultiSigPaymentRecord) {
         let mut history = self.get_payment_history_map();
         history.set(record.payment_id, record.clone());
         self.env
@@ -265,7 +270,7 @@ impl<'a> Storage<'a> {
     }
 
     #[allow(dead_code)]
-    pub fn get_payment_record(&self, payment_id: u128) -> Option<PaymentRecord> {
+    pub fn get_payment_record(&self, payment_id: u128) -> Option<MultiSigPaymentRecord> {
         let history = self.get_payment_history_map();
         history.get(payment_id)
     }
@@ -285,6 +290,54 @@ impl<'a> Storage<'a> {
         next_id
     }
 
+    // ===== Payment records management =====
+    pub fn save_payment(&self, record: &PaymentRecord) {
+        let mut payments = self.get_payments_map();
+        payments.set(record.order_id.clone(), record.clone());
+        self.env.storage().instance().set(
+            &DataKey::Payments.as_symbol(self.env),
+            &payments,
+        );
+    }
+
+    pub fn get_payment(&self, order_id: &soroban_sdk::String) -> Result<PaymentRecord, PaymentError> {
+        let payments = self.get_payments_map();
+        payments.get(order_id.clone()).ok_or(PaymentError::PaymentNotFound)
+    }
+
+    pub fn update_payment(&self, record: &PaymentRecord) {
+        let mut payments = self.get_payments_map();
+        payments.set(record.order_id.clone(), record.clone());
+        self.env.storage().instance().set(
+            &DataKey::Payments.as_symbol(self.env),
+            &payments,
+        );
+    }
+
+    // ===== Refund requests management =====
+    pub fn save_refund(&self, request: &RefundRequest) {
+        let mut refunds = self.get_refunds_map();
+        refunds.set(request.refund_id.clone(), request.clone());
+        self.env.storage().instance().set(
+            &DataKey::Refunds.as_symbol(self.env),
+            &refunds,
+        );
+    }
+
+    pub fn get_refund(&self, refund_id: &soroban_sdk::String) -> Result<RefundRequest, PaymentError> {
+        let refunds = self.get_refunds_map();
+        refunds.get(refund_id.clone()).ok_or(PaymentError::RefundNotFound)
+    }
+
+    pub fn update_refund(&self, request: &RefundRequest) {
+        let mut refunds = self.get_refunds_map();
+        refunds.set(request.refund_id.clone(), request.clone());
+        self.env.storage().instance().set(
+            &DataKey::Refunds.as_symbol(self.env),
+            &refunds,
+        );
+    }
+
     fn get_multisig_payments_map(&self) -> Map<u128, MultiSigPayment> {
         self.env
             .storage()
@@ -293,7 +346,7 @@ impl<'a> Storage<'a> {
             .unwrap_or_else(|| Map::new(self.env))
     }
 
-    fn get_payment_history_map(&self) -> Map<u128, PaymentRecord> {
+    fn get_payment_history_map(&self) -> Map<u128, MultiSigPaymentRecord> {
         self.env
             .storage()
             .instance()
@@ -385,5 +438,15 @@ impl<'a> Storage<'a> {
             .get(&DataKey::Admin.as_symbol(self.env))
     }
 
-}
+    fn get_payments_map(&self) -> Map<soroban_sdk::String, PaymentRecord> {
+        self.env.storage().instance()
+            .get(&DataKey::Payments.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env))
+    }
 
+    fn get_refunds_map(&self) -> Map<soroban_sdk::String, RefundRequest> {
+        self.env.storage().instance()
+            .get(&DataKey::Refunds.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env))
+    }
+}

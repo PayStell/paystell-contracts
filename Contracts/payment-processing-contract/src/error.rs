@@ -42,6 +42,14 @@ pub enum PaymentError {
     EmptySignersList = 28,
     DuplicateSigner = 29,
     InvalidPaymentId = 30,
+
+    // Refund specific errors
+    RefundNotFound = 31,
+    NotRefundable = 32,
+    RefundWindowExceeded = 33,
+    ExceedsOriginalAmount = 34,
+    InvalidRefundStatus = 35,
+    InsufficientBalance = 36,
 }
 
 impl fmt::Display for PaymentError {
@@ -84,6 +92,14 @@ impl fmt::Display for PaymentError {
             PaymentError::EmptySignersList => write!(f, "Signers list cannot be empty"),
             PaymentError::DuplicateSigner => write!(f, "Duplicate signer in list"),
             PaymentError::InvalidPaymentId => write!(f, "Invalid payment ID"),
+
+            // Refund errors
+            PaymentError::RefundNotFound => write!(f, "Refund not found"),
+            PaymentError::NotRefundable => write!(f, "Payment not refundable"),
+            PaymentError::RefundWindowExceeded => write!(f, "Refund window exceeded"),
+            PaymentError::ExceedsOriginalAmount => write!(f, "Refund exceeds original amount"),
+            PaymentError::InvalidRefundStatus => write!(f, "Invalid refund status transition"),
+            PaymentError::InsufficientBalance => write!(f, "Insufficient balance for refund"),
         }
     }
 }
