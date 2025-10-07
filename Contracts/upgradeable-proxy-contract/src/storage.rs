@@ -55,8 +55,7 @@ impl<'a> Storage<'a> {
 
     pub fn set_implementation(&self, new_impl: &Address) -> Result<(), ProxyError> {
         self.env.storage().instance().set(&DataKey::Impl, new_impl);
-        let mut version: u64 = self.version();
-        version += 1; self.env.storage().instance().set(&DataKey::Version, &version);
+        // Note: Version increment is handled in record_history to avoid double increment
         Ok(())
     }
 
@@ -64,6 +63,8 @@ impl<'a> Storage<'a> {
         let mut history: Vec<ImplementationRecord> = self.env.storage().instance().get(&DataKey::History).unwrap();
         history.push_back(rec);
         self.env.storage().instance().set(&DataKey::History, &history);
+        // Update version to match the recorded history entry
+        self.env.storage().instance().set(&DataKey::Version, &rec.version);
     }
 
     pub fn last_history_prev(&self) -> Option<Address> {
