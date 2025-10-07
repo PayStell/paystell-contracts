@@ -16,6 +16,22 @@
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "string": "Test Merchant"
+                },
+                {
+                  "string": "A test merchant for unit tests"
+                },
+                {
+                  "string": "test@merchant.com"
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "Retail"
+                    }
+                  ]
                 }
               ]
             }
@@ -98,6 +114,69 @@
                                     },
                                     "val": {
                                       "u32": 1
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "category"
+                                    },
+                                    "val": {
+                                      "vec": [
+                                        {
+                                          "symbol": "Retail"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "contact_info"
+                                    },
+                                    "val": {
+                                      "string": "test@merchant.com"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "description"
+                                    },
+                                    "val": {
+                                      "string": "A test merchant for unit tests"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "last_activity_timestamp"
+                                    },
+                                    "val": {
+                                      "u64": 0
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "max_transaction_limit"
+                                    },
+                                    "val": {
+                                      "i128": {
+                                        "hi": 0,
+                                        "lo": 1000000000000
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "name"
+                                    },
+                                    "val": {
+                                      "string": "Test Merchant"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "registration_timestamp"
+                                    },
+                                    "val": {
+                                      "u64": 0
                                     }
                                   },
                                   {

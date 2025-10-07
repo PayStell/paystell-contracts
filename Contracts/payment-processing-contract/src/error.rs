@@ -14,25 +14,34 @@ pub enum PaymentError {
     OrderExpired = 6,
     InvalidToken = 7,
 
+    // Merchant profile validation errors
+    InvalidName = 8,
+    InvalidDescription = 9,
+    InvalidContactInfo = 10,
+    MerchantAlreadyExists = 11,
+    TransactionLimitExceeded = 12,
+    InvalidTransactionLimit = 13,
+    MerchantInactive = 14,
+
     // Admin / contract management
-    AdminNotFound = 8,
-    ContractPaused = 9,
-    AlreadyPaused = 10,
-    InvalidFeeRate = 11,
+    AdminNotFound = 15,
+    ContractPaused = 16,
+    AlreadyPaused = 17,
+    InvalidFeeRate = 18,
 
     // Multi-signature specific errors
-    PaymentNotFound = 12,
-    InvalidThreshold = 13,
-    ThresholdNotMet = 14,
-    AlreadyExecuted = 15,
-    AlreadyCancelled = 16,
-    PaymentExpired = 17,
-    AlreadySigned = 18,
-    NotASigner = 19,
-    InvalidStatus = 20,
-    EmptySignersList = 21,
-    DuplicateSigner = 22,
-    InvalidPaymentId = 23,
+    PaymentNotFound = 19,
+    InvalidThreshold = 20,
+    ThresholdNotMet = 21,
+    AlreadyExecuted = 22,
+    AlreadyCancelled = 23,
+    PaymentExpired = 24,
+    AlreadySigned = 25,
+    NotASigner = 26,
+    InvalidStatus = 27,
+    EmptySignersList = 28,
+    DuplicateSigner = 29,
+    InvalidPaymentId = 30,
 }
 
 impl fmt::Display for PaymentError {
@@ -46,6 +55,15 @@ impl fmt::Display for PaymentError {
             PaymentError::InvalidAmount => write!(f, "Invalid amount"),
             PaymentError::OrderExpired => write!(f, "Payment order has expired"),
             PaymentError::InvalidToken => write!(f, "Token not supported by merchant"),
+
+            // Merchant profile validation errors
+            PaymentError::InvalidName => write!(f, "Invalid merchant name (must be 1-100 characters)"),
+            PaymentError::InvalidDescription => write!(f, "Invalid description (max 500 characters)"),
+            PaymentError::InvalidContactInfo => write!(f, "Invalid contact info (max 200 characters)"),
+            PaymentError::MerchantAlreadyExists => write!(f, "Merchant already registered"),
+            PaymentError::TransactionLimitExceeded => write!(f, "Transaction amount exceeds merchant limit"),
+            PaymentError::InvalidTransactionLimit => write!(f, "Invalid transaction limit (must be positive)"),
+            PaymentError::MerchantInactive => write!(f, "Merchant account is inactive"),
 
             // Admin / contract management
             PaymentError::AdminNotFound => write!(f, "Admin not found"),
