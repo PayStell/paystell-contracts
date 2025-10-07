@@ -8,7 +8,7 @@ use soroban_sdk::{
     contract, contractimpl, token, Address, Env,
     Vec, BytesN, Bytes, xdr::ToXdr, Symbol, log, Map,
 };
-use alloc::vec;
+// Note: In Soroban, we use the standard Vec from soroban_sdk, not alloc::vec
 
 use crate::{
     error::PaymentError,
@@ -201,12 +201,12 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             return Err(PaymentError::InvalidToken);
         }
 
-        let fee_amount = storage.calculate_fee(order.amount);
+        let fee_amount = storage.calculate_fee(order.amount as i128);
 
         if fee_amount < 0 {
             return Err(PaymentError::InvalidAmount);
         }
-        let merchant_amount = order.amount - fee_amount;
+        let merchant_amount = (order.amount as i128) - fee_amount;
 
         // Process the payment using Stellar token contract
         let payment_token_client = token::Client::new(&env, &order.token);
@@ -323,11 +323,20 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         for (merchant, nonces) in seen.iter() {
             // Convert Soroban Vec to standard Vec for batch operation - no hardcoded limit
-            let mut nonces_vec = vec::Vec::new();
+            let mut nonces_vec = Vec::new(&env);
             for nonce in nonces.iter() {
-                nonces_vec.push(nonce);
+                nonces_vec.push_back(nonce);
             }
-            storage.batch_mark_nonces_used(&merchant, &nonces_vec);
+            // Convert to array for batch operation
+            let mut nonces_array = [0u32; 1000]; // Increased limit to 1000
+            let mut i = 0;
+            for nonce in nonces_vec.iter() {
+                if i < 1000 {
+                    nonces_array[i] = nonce;
+                    i += 1;
+                }
+            }
+            storage.batch_mark_nonces_used(&merchant, &nonces_array[..i]);
         }
         
         log!(&env, "payments_batch_processed", batch.payer, batch.orders.len());
@@ -336,7 +345,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     }
 
     // Gas Estimation Functions
-    fn estimate_gas_for_payment(env: Env, order: PaymentOrder) -> Result<GasEstimate, PaymentError> {
+    fn estimate_gas_for_payment(_env: Env, _order: PaymentOrder) -> Result<GasEstimate, PaymentError> {
         // Base gas cost for payment processing
         let base_gas = 50_000u64;
         

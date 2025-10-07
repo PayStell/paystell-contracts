@@ -2,7 +2,7 @@ use crate::{
     types::{Merchant, NonceTracker, Fee},
     error::PaymentError,
 };
-use soroban_sdk::{contracttype, Address, Env, Map, Symbol, Vec};
+use soroban_sdk::{contracttype, Address, Env, Map, Symbol};
 
 #[contracttype]
 #[derive(Clone)]
