@@ -60,6 +60,18 @@ impl ProxyTrait for UpgradeableProxyContract {
         store.require_initialized()?;
         store.require_admin_auth()?; // any admin can auth (mock_all_auths in tests)
         
+        // Input validation
+        if let Some(current) = store.current_impl() {
+            if current == new_impl {
+                return Err(ProxyError::SameImplementation);
+            }
+        }
+        
+        // Validate metadata size (reasonable limit of 1KB)
+        if metadata.len() > 1024 {
+            return Err(ProxyError::MetadataTooLarge);
+        }
+        
         // Get the current invoker and store it
         let current_invoker = env.current_contract_address();
         store.set_last_invoker(&current_invoker);

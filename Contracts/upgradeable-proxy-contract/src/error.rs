@@ -18,4 +18,7 @@ pub enum ProxyError {
     ImplementationNotSet = 12,
     ValidationFailed = 13,
     MigrationFailed = 14,
+    SameImplementation = 15,
+    MetadataTooLarge = 16,
+    InvalidImplementation = 17,
 }
