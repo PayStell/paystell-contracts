@@ -158,3 +158,42 @@ pub struct Fee {
     pub fee_collector: Address,
     pub fee_token: Address,
 }
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PaymentStatus {
+    Pending,
+    Executed,
+    Cancelled,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MultiSigPayment {
+    pub payment_id: u128,
+    pub amount: i128,
+    pub token: Address,
+    pub recipient: Address,
+    pub signers: Vec<Address>,
+    pub threshold: u32,
+    pub signatures: Map<Address, bool>,
+    pub status: PaymentStatus,
+    pub expiry: u64,
+    pub created_at: u64,
+    pub reason: Option<String>, // For cancellation reason
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaymentRecord {
+    pub payment_id: u128,
+    pub amount: i128,
+    pub token: Address,
+    pub recipient: Address,
+    pub signers: Vec<Address>,
+    pub threshold: u32,
+    pub status: PaymentStatus,
+    pub executed_at: u64,
+    pub executor: Option<Address>, // Who executed the payment
+    pub reason: Option<String>, // Cancellation reason if applicable
+}
