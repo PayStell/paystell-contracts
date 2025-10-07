@@ -4,7 +4,13 @@ mod error;
 mod storage;
 mod types;
 
-use soroban_sdk::{contract, contractimpl, token, xdr::ToXdr, Address, Bytes, BytesN, Env, Vec};
+#[cfg(test)]
+mod test;
+
+use soroban_sdk::{
+    contract, contractimpl, token, Address, Env,
+    Vec, BytesN, Bytes, xdr::ToXdr, Symbol, panic_with_error
+};
 
 use crate::{
     error::PaymentError,
@@ -37,6 +43,12 @@ pub trait PaymentProcessingTrait {
         signature: BytesN<64>,
         merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError>;
+
+    fn set_pause_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), PaymentError>;
+    fn pause(env: Env, admin: Address) -> Result<(), PaymentError>;
+    fn pause_for_duration(env: Env, admin: Address, duration: u64) -> Result<(), PaymentError>;
+    fn unpause(env: Env, admin: Address) -> Result<(), PaymentError>;
+    fn is_paused(env: &Env) -> bool;
 }
 
 #[contract]
@@ -44,6 +56,7 @@ pub struct PaymentProcessingContract;
 
 #[contractimpl]
 impl PaymentProcessingTrait for PaymentProcessingContract {
+
     fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError> {
         let storage = Storage::new(&env);
 
@@ -70,7 +83,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             fee_collector,
             fee_token,
         };
-        let admin = storage.get_admin().ok_or(PaymentError::AdminNotSet)?;
+        let admin = storage.get_admin().ok_or(PaymentError::AdminNotFound)?;
         admin.require_auth();
         storage.set_fee_info(&fee, &admin)?;
         Ok(())
@@ -81,12 +94,15 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let rate = storage.get_fee_rate();
         let collector = storage
             .get_fee_collector()
-            .ok_or(PaymentError::AdminNotSet)?;
+            .ok_or(PaymentError::AdminNotFound)?;
         let token = storage.get_fee_token().ok_or(PaymentError::InvalidToken)?;
         Ok((rate, collector, token))
     }
 
     fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError> {
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
         // Verify authorization
         merchant_address.require_auth();
 
@@ -103,6 +119,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok(())
     }
 
+
     fn add_supported_token(
         env: Env,
         merchant: Address,
@@ -110,6 +127,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     ) -> Result<(), PaymentError> {
         // Verify authorization
         merchant.require_auth();
+
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
 
         let storage = Storage::new(&env);
         let mut merchant_data = storage.get_merchant(&merchant)?;
@@ -128,6 +149,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         _signature: BytesN<64>,
         _merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
         // Verify authorization from payer
         payer.require_auth();
 
@@ -188,7 +212,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         let fee_collector = storage
             .get_fee_collector()
-            .ok_or(PaymentError::AdminNotSet)?;
+            .ok_or(PaymentError::AdminNotFound)?;
 
         let fee_token = storage.get_fee_token().ok_or(PaymentError::InvalidToken)?;
 
@@ -229,7 +253,85 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         Ok(())
     }
-}
 
-#[cfg(test)]
-mod test;
+    
+    fn set_pause_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+
+        let storage = Storage::new(&env);
+        let _  = storage.set_pause_admin_internal(admin, new_admin);
+        Ok(())
+    }
+
+    fn pause(env: Env, admin: Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(&env);
+        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+
+        if pause_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+
+        if Self::is_paused(&env) {
+            return Err(PaymentError::AlreadyPaused);
+        }
+
+        storage.set_pause();
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_paused"), admin),
+            env.ledger().timestamp(),
+        );
+        Ok(())
+    }
+
+    fn pause_for_duration(env: Env, admin: Address, duration: u64) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(&env);
+        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+
+        if pause_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+
+        if Self::is_paused(&env) {
+            return Err(PaymentError::AlreadyPaused);
+        }
+
+        let current_time = env.ledger().timestamp();
+        let pause_until = current_time + duration;
+
+        storage.set_pause_until(pause_until);
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_paused"), admin),
+            env.ledger().timestamp(),
+        );
+        Ok(())
+    }
+
+
+    fn unpause(env: Env, admin: Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(&env);
+        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+
+        if pause_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+        storage.set_unpause();
+        storage.set_pause_until(0);
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_unpaused"), admin),
+            env.ledger().timestamp(),
+        );
+        Ok(())
+    }
+
+    fn is_paused(env: &Env) -> bool {
+        let storage = Storage::new(&env);
+        storage.is_paused()
+    }
+
+}
