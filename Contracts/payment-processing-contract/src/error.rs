@@ -13,7 +13,10 @@ pub enum PaymentError {
     OrderExpired = 6,
     InvalidToken = 7,
     AdminNotSet = 8,
-    InvalidFeeRate = 9,
+    ContractPaused = 9,
+    AdminNotFound = 10,
+    AlreadyPaused = 11,
+    InvalidFeeRate = 12,
 }
 
 impl fmt::Display for PaymentError {
@@ -27,6 +30,9 @@ impl fmt::Display for PaymentError {
             PaymentError::OrderExpired => write!(f, "Payment order has expired"),
             PaymentError::InvalidToken => write!(f, "Token not supported by merchant"),
             PaymentError::AdminNotSet => write!(f, "Admin is not set"),
+            PaymentError::ContractPaused => write!(f, "Contract is paused"),
+            PaymentError::AdminNotFound => write!(f, "Admin not found"),
+            PaymentError::AlreadyPaused => write!(f, "Contract is already paused"),
             PaymentError::InvalidFeeRate => write!(f, "Invalid fee rate"),
         }
     }

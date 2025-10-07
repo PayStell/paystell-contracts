@@ -6,7 +6,7 @@ mod types;
 
 use soroban_sdk::{
     contract, contractimpl, token, Address, Env,
-    Vec, BytesN, Bytes, xdr::ToXdr, Symbol, log, Map,
+    Vec, BytesN, Bytes, xdr::ToXdr, Symbol, log, Map, panic_with_error,
 };
 // Note: In Soroban, we use the standard Vec from soroban_sdk, not alloc::vec
 
@@ -64,6 +64,13 @@ pub trait PaymentProcessingTrait {
     fn remove_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError>;
     fn deactivate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError>;
     fn activate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError>;
+
+    // Pause Management Operations
+    fn set_pause_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), PaymentError>;
+    fn pause(env: Env, admin: Address) -> Result<(), PaymentError>;
+    fn pause_for_duration(env: Env, admin: Address, duration: u64) -> Result<(), PaymentError>;
+    fn unpause(env: Env, admin: Address) -> Result<(), PaymentError>;
+    fn is_paused(env: &Env) -> bool;
 }
 
 #[contract]
@@ -97,7 +104,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             fee_collector,
             fee_token,
         };
-        let admin = storage.get_admin().ok_or(PaymentError::AdminNotSet)?;
+        let admin = storage.get_admin().ok_or(PaymentError::AdminNotFound)?;
         admin.require_auth();
         storage.set_fee_info(&fee, &admin)?;
         Ok(())
@@ -108,12 +115,15 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let rate = storage.get_fee_rate();
         let collector = storage
             .get_fee_collector()
-            .ok_or(PaymentError::AdminNotSet)?;
+            .ok_or(PaymentError::AdminNotFound)?;
         let token = storage.get_fee_token().ok_or(PaymentError::InvalidToken)?;
         Ok((rate, collector, token))
     }
 
     fn register_merchant(env: Env, merchant_address: Address) -> Result<(), PaymentError> {
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
         // Verify authorization
         merchant_address.require_auth();
 
@@ -138,6 +148,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         // Verify authorization
         merchant.require_auth();
 
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
+
         let storage = Storage::new(&env);
         let mut merchant_data = storage.get_merchant(&merchant)?;
 
@@ -156,6 +170,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         _signature: BytesN<64>,
         _merchant_public_key: BytesN<32>,
     ) -> Result<(), PaymentError> {
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
         // Verify authorization from payer
         payer.require_auth();
 
@@ -235,6 +252,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
     // Batch Operations for Gas Optimization
     fn batch_register_merchants(env: Env, batch: BatchMerchantRegistration) -> Result<(), PaymentError> {
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
         let storage = Storage::new(&env);
         
         for merchant_address in batch.merchants.iter() {
@@ -249,6 +269,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     }
 
     fn batch_add_tokens(env: Env, batch: BatchTokenAddition) -> Result<(), PaymentError> {
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
         // Verify authorization
         batch.merchant.require_auth();
 
@@ -267,6 +290,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     }
 
     fn batch_process_payments(env: Env, batch: BatchPayment) -> Result<(), PaymentError> {
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
         batch.payer.require_auth();
 
         let storage = Storage::new(&env);
@@ -419,6 +445,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     fn remove_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError> {
         merchant.require_auth();
 
+        if Self::is_paused(&env) {
+            return Err(PaymentError::ContractPaused);
+        }
+
         let storage = Storage::new(&env);
         let mut merchant_data = storage.get_merchant(&merchant)?;
 
@@ -456,6 +486,85 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         log!(&env, "merchant_activated", merchant);
         
         Ok(())
+    }
+
+    // Pause Management Operations
+    fn set_pause_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+
+        let storage = Storage::new(&env);
+        let _  = storage.set_pause_admin_internal(admin, new_admin);
+        Ok(())
+    }
+
+    fn pause(env: Env, admin: Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(&env);
+        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+
+        if pause_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+
+        if Self::is_paused(&env) {
+            return Err(PaymentError::AlreadyPaused);
+        }
+
+        storage.set_pause();
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_paused"), admin),
+            env.ledger().timestamp(),
+        );
+        Ok(())
+    }
+
+    fn pause_for_duration(env: Env, admin: Address, duration: u64) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(&env);
+        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+
+        if pause_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+
+        if Self::is_paused(&env) {
+            return Err(PaymentError::AlreadyPaused);
+        }
+
+        let current_time = env.ledger().timestamp();
+        let pause_until = current_time + duration;
+
+        storage.set_pause_until(pause_until);
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_paused"), admin),
+            env.ledger().timestamp(),
+        );
+        Ok(())
+    }
+
+    fn unpause(env: Env, admin: Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(&env);
+        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+
+        if pause_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+        storage.set_unpause();
+        storage.set_pause_until(0);
+
+        env.events().publish(
+            (Symbol::new(&env, "contract_unpaused"), admin),
+            env.ledger().timestamp(),
+        );
+        Ok(())
+    }
+
+    fn is_paused(env: &Env) -> bool {
+        let storage = Storage::new(&env);
+        storage.is_paused()
     }
 }
 

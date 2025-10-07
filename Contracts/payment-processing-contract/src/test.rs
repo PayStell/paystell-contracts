@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::Address as _,
+    testutils::{Address as _, Ledger}, 
     Address, Env, String, BytesN, Vec, Symbol,
     token,
 };
@@ -69,7 +69,7 @@ fn test_fee_management() {
 }
 
 #[test]
-#[should_panic] // AdminNotSet
+#[should_panic] // AdminNotFound
 fn test_set_fee_no_admin() {
     let env = Env::default();
     let contract_id = env.register(PaymentProcessingContract {}, ());
@@ -486,7 +486,7 @@ fn test_batch_process_payments() {
     // Setup merchant and token
     let merchant = Address::generate(&env);
     let admin = Address::generate(&env);
-    let (token, token_client, token_admin) = create_token_contract(&env, &admin);
+    let (token, _token_client, token_admin) = create_token_contract(&env, &admin);
     let payer = Address::generate(&env);
 
     // Register merchant and add token
@@ -690,7 +690,7 @@ fn test_nonce_bitmap_optimization() {
 
     let merchant = Address::generate(&env);
     let admin = Address::generate(&env);
-    let (token, token_client, token_admin) = create_token_contract(&env, &admin);
+    let (token, _token_client, token_admin) = create_token_contract(&env, &admin);
     let payer = Address::generate(&env);
 
     // Register merchant and add token
@@ -742,4 +742,329 @@ fn test_nonce_bitmap_optimization() {
     
     // Verify nonce 11 is not used
     assert!(!tracker.is_nonce_used(11));
+}
+
+// Pause Management Tests
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #9)")]
+fn test_register_merchant_paused() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+    client.set_pause_admin(&admin, &pause_admin);
+    client.pause(&pause_admin);
+
+    client.register_merchant(&merchant);
+}
+
+#[test]
+fn test_contract_is_paused() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+    client.set_pause_admin(&admin, &pause_admin);
+    client.pause(&pause_admin);
+
+    let is_paused = client.is_paused();
+
+    assert_eq!(is_paused, true);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #9)")]
+fn test_add_supported_token_paused() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let _token = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    client.set_pause_admin(&admin, &pause_admin);
+    // Register merchant first
+    client.register_merchant(&merchant);
+    
+    client.pause(&pause_admin);
+
+    // Add supported token
+    client.add_supported_token(&merchant, &token);
+}
+
+#[test]
+fn test_pause_unpause() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let _token = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    client.set_pause_admin(&admin, &pause_admin);
+    // Register merchant first
+    client.register_merchant(&merchant);
+    
+    client.pause(&pause_admin);
+
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, true);
+
+    client.unpause(&pause_admin);
+
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, false);
+
+    // Add supported token
+    client.add_supported_token(&merchant, &token);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #10)")]
+fn test_double_pause() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let _token = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    client.set_pause_admin(&admin, &pause_admin);
+    // Register merchant first
+    client.register_merchant(&merchant);
+    
+    client.pause(&pause_admin);
+
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, true);
+    
+    client.pause(&pause_admin);
+}
+
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #8)")]
+fn test_pause_without_set_pause_admin() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    
+    client.pause(&admin);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #1)")]
+fn test_unauthorized() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    let unauthorized = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let token = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    client.set_pause_admin(&admin, &pause_admin);
+    client.register_merchant(&merchant);
+    
+    client.pause(&unauthorized);
+}
+
+#[test]
+fn test_pause_until() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let _token = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    client.set_pause_admin(&admin, &pause_admin);
+    client.register_merchant(&merchant);
+    
+    client.pause_for_duration(&pause_admin, &100);
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, true);
+}
+
+#[test]
+fn test_pause_until_duration_passed() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    env.ledger().set_timestamp(10);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let _token = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    client.set_pause_admin(&admin, &pause_admin);
+    client.register_merchant(&merchant);
+    
+    client.pause_for_duration(&pause_admin, &100);
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, true);
+
+    env.ledger().set_timestamp(150); // After pause time, so paused should be false
+
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, false);
+
+    client.add_supported_token(&merchant, &token);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #9)")]
+fn test_pause_until_duration_not_passed() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    env.ledger().set_timestamp(10);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    let merchant = Address::generate(&env);
+    let _token = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    client.set_pause_admin(&admin, &pause_admin);
+    client.register_merchant(&merchant);
+    
+    client.pause_for_duration(&pause_admin, &100);
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, true);
+
+    env.ledger().set_timestamp(80);
+
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, true);
+
+    client.add_supported_token(&merchant, &token);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #10)")]
+fn test_pause_until_already_paused() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    env.ledger().set_timestamp(10);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    client.set_pause_admin(&admin, &pause_admin);
+    
+    client.pause_for_duration(&pause_admin, &100);
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, true);
+
+    env.ledger().set_timestamp(60);
+
+    client.pause_for_duration(&pause_admin, &100);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #10)")]
+fn test_pause_pause_until_already_paused() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    env.ledger().set_timestamp(10);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+    client.set_pause_admin(&admin, &pause_admin);
+
+    client.pause(&pause_admin);
+    
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, true);
+
+    env.ledger().set_timestamp(60);
+
+    client.pause_for_duration(&pause_admin, &100);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #10)")]
+fn test_pause_until_pause_already_paused() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    env.ledger().set_timestamp(10);
+    
+    let admin = Address::generate(&env);
+    let pause_admin = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.set_admin(&admin);
+
+    client.set_pause_admin(&admin, &pause_admin);
+
+    client.pause_for_duration(&pause_admin, &100);
+    let is_paused = client.is_paused();
+    assert_eq!(is_paused, true);
+
+    env.ledger().set_timestamp(60);
+
+    client.pause(&pause_admin);
 }
