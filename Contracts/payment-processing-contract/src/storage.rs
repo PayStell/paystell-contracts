@@ -2,16 +2,21 @@ use soroban_sdk::{
     contracttype, log, Address, Env, Map, Symbol, Vec
 };
 use crate::{
+    types::{Merchant, NonceTracker, Fee},
     error::PaymentError,
-    types::{Fee, Merchant},
 };
+use soroban_sdk::{contracttype, log, Address, Env, Map, Symbol};
 
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
     Initialized,
     Merchants,
-    UsedNonces,
+    NonceTrackers,
+    // Cache keys for frequently accessed data
+    MerchantCache,
+    TokenCache,
+    // Pause management keys
     Paused,
     PausedAdmin,
     PausedUntil,
@@ -24,7 +29,9 @@ impl DataKey {
         match self {
             DataKey::Initialized => Symbol::new(env, "initialized"),
             DataKey::Merchants => Symbol::new(env, "merchants"),
-            DataKey::UsedNonces => Symbol::new(env, "used_nonces"),
+            DataKey::NonceTrackers => Symbol::new(env, "nonce_trackers"),
+            DataKey::MerchantCache => Symbol::new(env, "merchant_cache"),
+            DataKey::TokenCache => Symbol::new(env, "token_cache"),
             DataKey::Paused => Symbol::new(env, "paused"),
             DataKey::PausedAdmin => Symbol::new(env, "paused_admin"),
             DataKey::PausedUntil => Symbol::new(env, "paused_until"),
@@ -34,6 +41,7 @@ impl DataKey {
     }
 }
 
+/// Optimized storage with efficient operations
 pub struct Storage<'a> {
     env: &'a Env,
 }
@@ -43,96 +51,7 @@ impl<'a> Storage<'a> {
         Self { env }
     }
 
-    pub fn set_pause_admin_internal(&self, admin: Address, new_admin: Address) -> Result<(), PaymentError> {
-        self.require_admin(&admin)?;
-
-        self.env.storage().instance().set(
-            &DataKey::PausedAdmin.as_symbol(self.env),
-            &new_admin,
-        );
-        Ok(())
-    }
-
-    pub fn set_pause_until(&self, timestamp: u64) {
-        self.env.storage().instance().set(
-            &DataKey::PausedUntil.as_symbol(self.env),
-            &timestamp,
-        );
-    }
-
-    pub fn get_pause_admin(&self) -> Result<Address, PaymentError> {
-        self.env.storage().instance().get(
-            &DataKey::PausedAdmin.as_symbol(self.env),
-        ).ok_or(PaymentError::AdminNotFound)
-    }
-
-    pub fn set_pause(&self) {
-        self.env.storage().instance().set(
-            &DataKey::Paused.as_symbol(self.env),
-            &true,
-        );
-    }
-
-    pub fn set_unpause(&self) {
-        self.env.storage().instance().set(
-            &DataKey::Paused.as_symbol(self.env),
-            &false,
-        );
-    }
-
-    pub fn is_paused(&self) -> bool  {
-        let pause = self.env.storage().instance()
-            .get(&DataKey::Paused.as_symbol(self.env),)
-            .unwrap_or(false);
-        log!(&self.env, "pause: {}", pause);
-        
-
-        let pause_until: u64 = self.env.storage().instance()
-            .get(&DataKey::PausedUntil.as_symbol(self.env),)
-            .unwrap_or(0);
-        log!(&self.env, "pause_until: {}", pause_until);
-
-
-        let current_time = self.env.ledger().timestamp();
-
-        if !pause && (pause_until == 0 || current_time > pause_until) {
-            return false
-        } 
-        true
-    }
-
-    pub fn save_merchant(&self, address: &Address, merchant: &Merchant) {
-        let mut merchants = self.get_merchants_map();
-        merchants.set(address.clone(), merchant.clone());
-        self.env
-            .storage()
-            .instance()
-            .set(&DataKey::Merchants.as_symbol(self.env), &merchants);
-    }
-
-    pub fn get_merchant(&self, address: &Address) -> Result<Merchant, PaymentError> {
-        let merchants = self.get_merchants_map();
-        merchants
-            .get(address.clone())
-            .ok_or(PaymentError::MerchantNotFound)
-    }
-
-    pub fn is_nonce_used(&self, merchant: &Address, nonce: u64) -> bool {
-        let nonces = self.get_merchant_nonces(merchant);
-        nonces.contains(&nonce)
-    }
-
-    pub fn mark_nonce_used(&self, merchant: &Address, nonce: u64) {
-        let mut nonces = self.get_merchant_nonces(merchant);
-        nonces.push_back(nonce);
-        let mut used_nonces = self.get_used_nonces_map();
-        used_nonces.set(merchant.clone(), nonces);
-        self.env
-            .storage()
-            .instance()
-            .set(&DataKey::UsedNonces.as_symbol(self.env), &used_nonces);
-    }
-
+    /// Get merchants map
     fn get_merchants_map(&self) -> Map<Address, Merchant> {
         self.env
             .storage()
@@ -141,19 +60,102 @@ impl<'a> Storage<'a> {
             .unwrap_or_else(|| Map::new(self.env))
     }
 
-    fn get_used_nonces_map(&self) -> Map<Address, Vec<u64>> {
-        self.env
-            .storage()
-            .instance()
-            .get(&DataKey::UsedNonces.as_symbol(self.env))
+    /// Get nonce trackers map
+    fn get_nonce_trackers_map(&self) -> Map<Address, NonceTracker> {
+        self.env.storage().instance()
+            .get(&DataKey::NonceTrackers.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
     }
 
-    fn get_merchant_nonces(&self, merchant: &Address) -> Vec<u64> {
-        let used_nonces = self.get_used_nonces_map();
-        used_nonces
-            .get(merchant.clone())
-            .unwrap_or_else(|| Vec::new(self.env))
+    /// Save merchant with optimized storage
+    pub fn save_merchant(&self, address: &Address, merchant: &Merchant) {
+        let mut merchants = self.get_merchants_map();
+        merchants.set(address.clone(), merchant.clone());
+        
+        // Persist to storage
+        self.env.storage().instance().set(
+            &DataKey::Merchants.as_symbol(self.env),
+            &merchants,
+        );
+    }
+
+    /// Get merchant
+    pub fn get_merchant(&self, address: &Address) -> Result<Merchant, PaymentError> {
+        let merchants = self.get_merchants_map();
+        merchants.get(address.clone())
+            .ok_or(PaymentError::MerchantNotFound)
+    }
+
+    /// Check if nonce is used with bitmap optimization
+    pub fn is_nonce_used(&self, merchant: &Address, nonce: u32) -> bool {
+        let trackers = self.get_nonce_trackers_map();
+        if let Some(tracker) = trackers.get(merchant.clone()) {
+            tracker.is_nonce_used(nonce)
+        } else {
+            false
+        }
+    }
+
+    /// Mark nonce as used with bitmap optimization
+    pub fn mark_nonce_used(&self, merchant: &Address, nonce: u32) {
+        let mut trackers = self.get_nonce_trackers_map();
+        let mut tracker = trackers.get(merchant.clone())
+            .unwrap_or_else(|| NonceTracker::new(self.env));
+        
+        tracker.mark_nonce_used(nonce);
+        trackers.set(merchant.clone(), tracker);
+        
+        // Persist to storage
+        self.env.storage().instance().set(
+            &DataKey::NonceTrackers.as_symbol(self.env),
+            &trackers,
+        );
+    }
+
+    /// Batch save multiple merchants (gas optimization)
+    pub fn batch_save_merchants(&self, merchants_data: &[(Address, Merchant)]) {
+        let mut merchants = self.get_merchants_map();
+        
+        for (address, merchant) in merchants_data {
+            merchants.set(address.clone(), merchant.clone());
+        }
+        
+        // Single storage write for all merchants
+        self.env.storage().instance().set(
+            &DataKey::Merchants.as_symbol(self.env),
+            &merchants,
+        );
+    }
+
+    /// Batch mark multiple nonces as used (gas optimization)
+    pub fn batch_mark_nonces_used(&self, merchant: &Address, nonces: &[u32]) {
+        let mut trackers = self.get_nonce_trackers_map();
+        let mut tracker = trackers.get(merchant.clone())
+            .unwrap_or_else(|| NonceTracker::new(self.env));
+        
+        for &nonce in nonces {
+            tracker.mark_nonce_used(nonce);
+        }
+        
+        trackers.set(merchant.clone(), tracker);
+        
+        // Single storage write
+        self.env.storage().instance().set(
+            &DataKey::NonceTrackers.as_symbol(self.env),
+            &trackers,
+        );
+    }
+
+    /// Get merchant count (for gas estimation)
+    pub fn get_merchant_count(&self) -> u32 {
+        let merchants = self.get_merchants_map();
+        merchants.len() as u32
+    }
+
+    /// Get nonce tracker for a merchant
+    pub fn get_nonce_tracker(&self, merchant: &Address) -> Option<NonceTracker> {
+        let trackers = self.get_nonce_trackers_map();
+        trackers.get(merchant.clone())
     }
 
     pub fn set_admin(&self, admin: &Address) {
@@ -240,5 +242,63 @@ impl<'a> Storage<'a> {
             .storage()
             .instance()
             .get(&DataKey::Admin.as_symbol(self.env))
+    }
+
+    // Pause Management Methods
+    pub fn set_pause_admin_internal(&self, admin: Address, new_admin: Address) -> Result<(), PaymentError> {
+        self.require_admin(&admin)?;
+
+        self.env.storage().instance().set(
+            &DataKey::PausedAdmin.as_symbol(self.env),
+            &new_admin,
+        );
+        Ok(())
+    }
+
+    pub fn set_pause_until(&self, timestamp: u64) {
+        self.env.storage().instance().set(
+            &DataKey::PausedUntil.as_symbol(self.env),
+            &timestamp,
+        );
+    }
+
+    pub fn get_pause_admin(&self) -> Result<Address, PaymentError> {
+        self.env.storage().instance().get(
+            &DataKey::PausedAdmin.as_symbol(self.env),
+        ).ok_or(PaymentError::AdminNotFound)
+    }
+
+    pub fn set_pause(&self) {
+        self.env.storage().instance().set(
+            &DataKey::Paused.as_symbol(self.env),
+            &true,
+        );
+    }
+
+    pub fn set_unpause(&self) {
+        self.env.storage().instance().set(
+            &DataKey::Paused.as_symbol(self.env),
+            &false,
+        );
+    }
+
+    pub fn is_paused(&self) -> bool {
+        let pause = self.env.storage().instance()
+            .get(&DataKey::Paused.as_symbol(self.env),)
+            .unwrap_or(false);
+        log!(&self.env, "pause: {}", pause);
+        
+
+        let pause_until: u64 = self.env.storage().instance()
+            .get(&DataKey::PausedUntil.as_symbol(self.env),)
+            .unwrap_or(0);
+        log!(&self.env, "pause_until: {}", pause_until);
+
+        let current_time = self.env.ledger().timestamp();
+
+        if !pause && (pause_until == 0 || current_time > pause_until) {
+            return false
+        } 
+        true
     }
 }

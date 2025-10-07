@@ -200,10 +200,10 @@
                                 "map": [
                                   {
                                     "key": {
-                                      "symbol": "active"
+                                      "symbol": "flags"
                                     },
                                     "val": {
-                                      "bool": true
+                                      "u32": 1
                                     }
                                   },
                                   {
@@ -211,11 +211,24 @@
                                       "symbol": "supported_tokens"
                                     },
                                     "val": {
-                                      "vec": [
+                                      "map": [
                                         {
-                                          "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
+                                          "key": {
+                                            "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
+                                          },
+                                          "val": {
+                                            "bool": true
+                                          }
                                         }
                                       ]
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "token_count"
+                                    },
+                                    "val": {
+                                      "u32": 1
                                     }
                                   },
                                   {

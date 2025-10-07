@@ -1,11 +1,16 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger}, token, Address, BytesN, Env, String, Vec
+    testutils::{Address as _, Ledger}, 
+    Address, Env, String, BytesN, Vec, Symbol,
+    token,
 };
 use crate::{
-    storage::Storage, types::PaymentOrder, PaymentProcessingContract,
-    PaymentProcessingContractClient,
+    PaymentProcessingContract, PaymentProcessingContractClient, 
+    types::{
+        PaymentOrder, BatchMerchantRegistration, BatchTokenAddition, 
+        BatchPayment
+    }
 };
 
 fn create_token_contract<'a>(
@@ -22,15 +27,15 @@ fn create_token_contract<'a>(
 fn create_payment_order(
     env: &Env,
     merchant: &Address,
-    amount: i128,
+    amount: i64,
     token: &Address,
-    expiration: u64,
+    expiration: u32,
 ) -> PaymentOrder {
     PaymentOrder {
         merchant_address: merchant.clone(),
         amount,
         token: token.clone(),
-        nonce: env.ledger().timestamp(),
+        nonce: env.ledger().timestamp() as u32,
         expiration,
         order_id: String::from_str(&env, "TEST_ORDER_1"),
         fee_amount: 0, // Initial fee amount, will be calculated during processing
@@ -64,7 +69,7 @@ fn test_fee_management() {
 }
 
 #[test]
-#[should_panic] // AdminNotSet
+#[should_panic] // AdminNotFound
 fn test_set_fee_no_admin() {
     let env = Env::default();
     let contract_id = env.register(PaymentProcessingContract {}, ());
@@ -138,12 +143,12 @@ fn test_payment_with_fees() {
     // Create payment order
     let order = PaymentOrder {
         merchant_address: merchant.clone(),
-        amount: payment_amount,
+        amount: payment_amount as i64,
         token: token.clone(),
-        nonce: 12345u64,
-        expiration: env.ledger().timestamp() + 1000,
-        order_id: String::from_str(&env, "TEST_ORDER_1"),
+        nonce: 12345u32,
+        expiration: (env.ledger().timestamp() + 1000) as u32,
         fee_amount: 0, // Initial fee amount, will be calculated during processing
+        order_id: String::from_str(&env, "TEST_ORDER_1"),
     };
 
     // Process payment
@@ -245,10 +250,10 @@ fn test_successful_payment_with_signature() {
     // Create payment order
     let order = PaymentOrder {
         merchant_address: merchant.clone(),
-        amount,
+        amount: amount as i64,
         token: token.clone(),
-        nonce: 12345u64,
-        expiration: env.ledger().timestamp() + 1000,
+        nonce: 12345u32,
+        expiration: (env.ledger().timestamp() + 1000) as u32,
         order_id: String::from_str(&env, "TEST_ORDER_1"),
         fee_amount: 0, // Will be calculated during processing
     };
@@ -304,7 +309,7 @@ fn test_expired_order() {
 
     // Create expired order
     let current_time = env.ledger().timestamp();
-    let expired_time = current_time - 1000; // Set expiration in the past
+    let expired_time = (current_time - 1000) as u32; // Set expiration in the past
     let order = create_payment_order(&env, &merchant, 100, &token, expired_time);
 
     // Create test signature
@@ -351,9 +356,8 @@ fn test_duplicate_nonce() {
     client.add_supported_token(&merchant, &token);
 
     // Create order
-    let expiration = env.ledger().timestamp() + 1000;
-    let order = create_payment_order(&env, &merchant, amount, &token, expiration);
-
+    let expiration = (env.ledger().timestamp() + 1000) as u32;
+    let order = create_payment_order(&env, &merchant, amount as i64, &token, expiration);
     // Create test signature
     let signature = BytesN::from_array(&env, &[3u8; 64]); // Test signature
 
@@ -395,7 +399,7 @@ fn test_unsupported_token() {
     client.register_merchant(&merchant);
 
     // Create order with unsupported token
-    let expiration = env.ledger().timestamp() + 1000;
+    let expiration = (env.ledger().timestamp() + 1000) as u32;
     let order = create_payment_order(&env, &merchant, 100, &token, expiration);
 
     // Create test signature
@@ -409,6 +413,338 @@ fn test_unsupported_token() {
         &merchant_public,
     );
 }
+
+// Performance and Gas Optimization Tests
+
+#[test]
+fn test_batch_register_merchants() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Create multiple merchants
+    let merchants = Vec::from_array(&env, [
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+    ]);
+
+    let batch = BatchMerchantRegistration {
+        merchants: merchants.clone(),
+    };
+
+    env.mock_all_auths();
+    client.batch_register_merchants(&batch);
+
+    // Verify all merchants were registered
+    for merchant in merchants.iter() {
+        let merchant_info = client.get_merchant_info(&merchant);
+        assert!(merchant_info.is_active());
+    }
+}
+
+#[test]
+fn test_batch_add_tokens() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let tokens = Vec::from_array(&env, [
+        Address::generate(&env),
+        Address::generate(&env),
+        Address::generate(&env),
+    ]);
+
+    // Register merchant first
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+
+    let batch = BatchTokenAddition {
+        merchant: merchant.clone(),
+        tokens: tokens.clone(),
+    };
+
+    env.mock_all_auths();
+    client.batch_add_tokens(&batch);
+
+    // Verify all tokens were added
+    for token in tokens.iter() {
+        assert!(client.is_token_supported(&merchant, &token));
+    }
+
+    // Verify token count
+    assert_eq!(client.get_merchant_token_count(&merchant), 3);
+}
+
+#[test]
+fn test_batch_process_payments() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    // Setup merchant and token
+    let merchant = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let (token, _token_client, token_admin) = create_token_contract(&env, &admin);
+    let payer = Address::generate(&env);
+
+    // Register merchant and add token
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    client.add_supported_token(&merchant, &token);
+
+    // Create multiple payment orders
+    let orders = Vec::from_array(&env, [
+        PaymentOrder {
+            merchant_address: merchant.clone(),
+            amount: 100,
+            token: token.clone(),
+            nonce: 1,
+            expiration: (env.ledger().timestamp() + 1000) as u32,
+            order_id: String::from_str(&env, "ORDER_1"),
+            fee_amount: 0,
+        },
+        PaymentOrder {
+            merchant_address: merchant.clone(),
+            amount: 200,
+            token: token.clone(),
+            nonce: 2,
+            expiration: (env.ledger().timestamp() + 1000) as u32,
+            order_id: String::from_str(&env, "ORDER_2"),
+            fee_amount: 0,
+        },
+        PaymentOrder {
+            merchant_address: merchant.clone(),
+            amount: 300,
+            token: token.clone(),
+            nonce: 3,
+            expiration: (env.ledger().timestamp() + 1000) as u32,
+            order_id: String::from_str(&env, "ORDER_3"),
+            fee_amount: 0,
+        },
+    ]);
+
+    let signatures = Vec::from_array(&env, [
+        BytesN::from_array(&env, &[4u8; 64]),
+        BytesN::from_array(&env, &[5u8; 64]),
+        BytesN::from_array(&env, &[6u8; 64]),
+    ]);
+    let merchant_public = BytesN::from_array(&env, &[7u8; 32]);
+
+    let batch = BatchPayment {
+        payer: payer.clone(),
+        orders: orders.clone(),
+        signatures,
+        merchant_public_key: merchant_public,
+    };
+
+    // Setup token balances
+    token_admin.mint(&payer, &600);
+
+    env.mock_all_auths();
+    client.batch_process_payments(&batch);
+
+    // Verify balances
+    assert_eq!(token_client.balance(&merchant), 600);
+    assert_eq!(token_client.balance(&payer), 0);
+
+    // Verify nonces were marked as used
+    for order in orders.iter() {
+        let tracker = client.get_nonce_tracker(&merchant);
+        assert!(tracker.is_some());
+        assert!(tracker.unwrap().is_nonce_used(order.nonce));
+    }
+}
+
+#[test]
+fn test_gas_estimation() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let token = Address::generate(&env);
+    let order = PaymentOrder {
+        merchant_address: merchant.clone(),
+        amount: 100,
+        token: token.clone(),
+        nonce: 1,
+        expiration: (env.ledger().timestamp() + 1000) as u32,
+        order_id: String::from_str(&env, "TEST_ORDER"),
+        fee_amount: 0,
+    };
+
+    // Test payment gas estimation
+    let estimate = client.estimate_gas_for_payment(&order);
+    assert!(estimate.total_estimated > 0);
+    assert!(estimate.base_gas > 0);
+    assert!(estimate.per_item_gas > 0);
+
+    // Test batch operation gas estimation
+    let batch_estimate = client.estimate_gas_for_batch_operation(
+        &Symbol::new(&env, "proc_pay"),
+        &3
+    );
+    assert!(batch_estimate.total_estimated > estimate.total_estimated);
+}
+
+#[test]
+fn test_view_functions() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let token = Address::generate(&env);
+
+    // Register merchant and add token
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    client.add_supported_token(&merchant, &token);
+
+    // Test view functions (should not require auth)
+    let merchant_info = client.get_merchant_info(&merchant);
+    assert!(merchant_info.is_active());
+    assert_eq!(merchant_info.token_count, 1);
+
+    let token_count = client.get_merchant_token_count(&merchant);
+    assert_eq!(token_count, 1);
+
+    let is_supported = client.is_token_supported(&merchant, &token);
+    assert!(is_supported);
+
+    let tracker = client.get_nonce_tracker(&merchant);
+    assert!(tracker.is_none()); // No nonces used yet
+}
+
+#[test]
+fn test_merchant_activation_deactivation() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+
+    // Register merchant
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+
+    // Verify merchant is active
+    let merchant_info = client.get_merchant_info(&merchant);
+    assert!(merchant_info.is_active());
+
+    // Deactivate merchant
+    env.mock_all_auths();
+    client.deactivate_merchant(&merchant);
+
+    // Verify merchant is inactive
+    let merchant_info = client.get_merchant_info(&merchant);
+    assert!(!merchant_info.is_active());
+
+    // Activate merchant
+    env.mock_all_auths();
+    client.activate_merchant(&merchant);
+
+    // Verify merchant is active again
+    let merchant_info = client.get_merchant_info(&merchant);
+    assert!(merchant_info.is_active());
+}
+
+#[test]
+fn test_token_removal() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let token1 = Address::generate(&env);
+    let token2 = Address::generate(&env);
+
+    // Register merchant and add tokens
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    client.add_supported_token(&merchant, &token1);
+    client.add_supported_token(&merchant, &token2);
+
+    // Verify both tokens are supported
+    assert_eq!(client.get_merchant_token_count(&merchant), 2);
+    assert!(client.is_token_supported(&merchant, &token1));
+    assert!(client.is_token_supported(&merchant, &token2));
+
+    // Remove one token
+    env.mock_all_auths();
+    client.remove_supported_token(&merchant, &token1);
+
+    // Verify only one token remains
+    assert_eq!(client.get_merchant_token_count(&merchant), 1);
+    assert!(!client.is_token_supported(&merchant, &token1));
+    assert!(client.is_token_supported(&merchant, &token2));
+}
+
+#[test]
+fn test_nonce_bitmap_optimization() {
+    let env = Env::default();
+    let contract_id = env.register(PaymentProcessingContract {}, ());
+    let client = PaymentProcessingContractClient::new(&env, &contract_id);
+
+    let merchant = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let (token, _token_client, token_admin) = create_token_contract(&env, &admin);
+    let payer = Address::generate(&env);
+
+    // Register merchant and add token
+    env.mock_all_auths();
+    client.register_merchant(&merchant);
+    client.add_supported_token(&merchant, &token);
+
+    // Set up fee management
+    env.mock_all_auths();
+    client.set_admin(&admin);
+    env.mock_all_auths();
+    client.set_fee(&0, &admin, &token); // 0% fee for this test
+
+    // Setup token balance
+    token_admin.mint(&payer, &1000);
+
+    let signature = BytesN::from_array(&env, &[6u8; 64]);
+    let merchant_public = BytesN::from_array(&env, &[7u8; 32]);
+
+    // Process multiple payments with different nonces
+    for i in 1..=10 {
+        let order = PaymentOrder {
+            merchant_address: merchant.clone(),
+            amount: 100,
+            token: token.clone(),
+            nonce: i,
+            expiration: (env.ledger().timestamp() + 1000) as u32,
+            order_id: String::from_str(&env, "ORDER_TEST"),
+            fee_amount: 0,
+        };
+
+        env.mock_all_auths();
+        client.process_payment_with_signature(
+            &payer,
+            &order,
+            &signature,
+            &merchant_public
+        );
+    }
+
+    // Verify nonce tracker shows all nonces as used
+    let tracker = client.get_nonce_tracker(&merchant);
+    assert!(tracker.is_some());
+    let tracker = tracker.unwrap();
+    
+    for i in 1..=10 {
+        assert!(tracker.is_nonce_used(i));
+    }
+    
+    // Verify nonce 11 is not used
+    assert!(!tracker.is_nonce_used(11));
+}
+
+// Pause Management Tests
 
 #[test]
 #[should_panic(expected = "HostError: Error(Contract, #9)")]
@@ -458,7 +794,7 @@ fn test_add_supported_token_paused() {
     let admin = Address::generate(&env);
     let pause_admin = Address::generate(&env);
     let merchant = Address::generate(&env);
-    let token = Address::generate(&env);
+    let _token = Address::generate(&env);
     env.mock_all_auths();
 
     client.set_admin(&admin);
@@ -482,7 +818,7 @@ fn test_pause_unpause() {
     let admin = Address::generate(&env);
     let pause_admin = Address::generate(&env);
     let merchant = Address::generate(&env);
-    let token = Address::generate(&env);
+    let _token = Address::generate(&env);
     env.mock_all_auths();
 
     client.set_admin(&admin);
@@ -515,7 +851,7 @@ fn test_double_pause() {
     let admin = Address::generate(&env);
     let pause_admin = Address::generate(&env);
     let merchant = Address::generate(&env);
-    let token = Address::generate(&env);
+    let _token = Address::generate(&env);
     env.mock_all_auths();
 
     client.set_admin(&admin);
@@ -579,7 +915,7 @@ fn test_pause_until() {
     let admin = Address::generate(&env);
     let pause_admin = Address::generate(&env);
     let merchant = Address::generate(&env);
-    let token = Address::generate(&env);
+    let _token = Address::generate(&env);
     env.mock_all_auths();
 
     client.set_admin(&admin);
@@ -603,7 +939,7 @@ fn test_pause_until_duration_passed() {
     let admin = Address::generate(&env);
     let pause_admin = Address::generate(&env);
     let merchant = Address::generate(&env);
-    let token = Address::generate(&env);
+    let _token = Address::generate(&env);
     env.mock_all_auths();
 
     client.set_admin(&admin);
@@ -635,7 +971,7 @@ fn test_pause_until_duration_not_passed() {
     let admin = Address::generate(&env);
     let pause_admin = Address::generate(&env);
     let merchant = Address::generate(&env);
-    let token = Address::generate(&env);
+    let _token = Address::generate(&env);
     env.mock_all_auths();
 
     client.set_admin(&admin);
@@ -654,7 +990,6 @@ fn test_pause_until_duration_not_passed() {
 
     client.add_supported_token(&merchant, &token);
 }
-
 
 #[test]
 #[should_panic(expected = "HostError: Error(Contract, #10)")]
