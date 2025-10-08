@@ -1,3 +1,4 @@
+// error.rs
 use soroban_sdk::contracterror;
 
 #[contracterror]
@@ -21,4 +22,9 @@ pub enum ProxyError {
     SameImplementation = 15,
     MetadataTooLarge = 16,
     InvalidImplementation = 17,
+    CompatibilityCheckFailed = 18,
+    SimulationFailed = 19,
+    MigrationValidationFailed = 20,
+    PartialMigrationDetected = 21,
+    InvocationFailed = 22,
 }
