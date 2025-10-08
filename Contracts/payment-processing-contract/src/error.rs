@@ -50,6 +50,8 @@ pub enum PaymentError {
     ExceedsOriginalAmount = 34,
     InvalidRefundStatus = 35,
     InsufficientBalance = 36,
+    InvalidPaginationParams = 40,
+    QueryLimitExceeded = 41,
 }
 
 impl fmt::Display for PaymentError {

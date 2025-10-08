@@ -20,6 +20,8 @@ use crate::{
         MerchantDeactivatedEvent, LimitsUpdatedEvent, merchant_registered_topic, 
         profile_updated_topic, merchant_deactivated_topic, limits_updated_topic,
         RefundRequest, RefundStatus, MultiSigPaymentRecord
+           PaymentQueryParams, PaymentStats, MerchantPaymentSummary, PayerPaymentSummary,
+        PaymentIndexEntry, PaymentBucket, CompressedPaymentRecord,
     },
     storage::Storage,
     helper::{validate_name, validate_description, validate_contact_info, 
@@ -1351,4 +1353,60 @@ impl PaymentProcessingContract {
 
         Ok(())
     }
+// Payment History Query and Management Functions
+    fn get_merchant_payment_history(
+        env: Env,
+        merchant: Address,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<PaymentRecord>, PaymentError>;
+
+    fn get_payer_payment_history(
+        env: Env,
+        payer: Address,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<PaymentRecord>, PaymentError>;
+
+    fn get_payment_by_order_id(
+        env: Env,
+        order_id: String,
+    ) -> Result<PaymentRecord, PaymentError>;
+
+    fn query_payments(
+        env: Env,
+        params: PaymentQueryParams,
+    ) -> Result<Vec<PaymentRecord>, PaymentError>;
+
+    fn get_merchant_payment_stats(
+        env: Env,
+        merchant: Address,
+    ) -> Result<MerchantPaymentSummary, PaymentError>;
+
+    fn get_payer_payment_stats(
+        env: Env,
+        payer: Address,
+    ) -> Result<PayerPaymentSummary, PaymentError>;
+
+    fn get_global_payment_stats(env: Env) -> Result<PaymentStats, PaymentError>;
+
+    fn get_payments_by_time_range(
+        env: Env,
+        start_time: u64,
+        end_time: u64,
+    ) -> Result<Vec<PaymentBucket>, PaymentError>;
+
+    fn get_payments_by_token(
+        env: Env,
+        token: Address,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<PaymentRecord>, PaymentError>;
+
+    fn archive_old_payments(
+        env: Env,
+        admin: Address,
+        cutoff_time: u64,
+    ) -> Result<(), PaymentError>;
+
 }

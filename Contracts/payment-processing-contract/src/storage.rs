@@ -25,6 +25,15 @@ pub enum DataKey {
     // Payment records and refunds
     Payments,
     Refunds,
+     MerchantPaymentIndex,   
+    PayerPaymentIndex,        
+    TimeBasedIndex,           
+    TokenBasedIndex,         
+    PaymentMetadata,          
+    MerchantStats,            
+    PayerStats,               
+    GlobalStats,              
+    CompressedArchive, 
 }
 
 impl DataKey {
@@ -43,6 +52,15 @@ impl DataKey {
             DataKey::Fee => Symbol::new(env, "fee"),
             DataKey::Payments => Symbol::new(env, "payments"),
             DataKey::Refunds => Symbol::new(env, "refunds"),
+            DataKey::MerchantPaymentIndex => Symbol::new(env, "merch_pay_idx"),
+            DataKey::PayerPaymentIndex => Symbol::new(env, "payer_pay_idx"),
+            DataKey::TimeBasedIndex => Symbol::new(env, "time_idx"),
+            DataKey::TokenBasedIndex => Symbol::new(env, "token_idx"),
+            DataKey::PaymentMetadata => Symbol::new(env, "pay_meta"),
+            DataKey::MerchantStats => Symbol::new(env, "merch_stats"),
+            DataKey::PayerStats => Symbol::new(env, "payer_stats"),
+            DataKey::GlobalStats => Symbol::new(env, "global_stats"),
+            DataKey::CompressedArchive => Symbol::new(env, "comp_archive"),
         }
     }
 }
@@ -449,4 +467,358 @@ impl<'a> Storage<'a> {
             .get(&DataKey::Refunds.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
     }
+    
+    /// Index a payment record for efficient querying
+    pub fn index_payment(&self, record: &PaymentRecord) {
+        // 1. Index by merchant
+        let mut merchant_index = self.get_merchant_payment_index(&record.merchant_address);
+        let entry = PaymentIndexEntry {
+            order_id: record.order_id.clone(),
+            timestamp: record.paid_at,
+            amount: record.amount,
+        };
+        merchant_index.push_back(entry.clone());
+        self.save_merchant_payment_index(&record.merchant_address, &merchant_index);
+
+        // 2. Index by payer
+        let mut payer_index = self.get_payer_payment_index(&record.payer_address);
+        payer_index.push_back(entry.clone());
+        self.save_payer_payment_index(&record.payer_address, &payer_index);
+
+        // 3. Time-based indexing (bucket by day)
+        let bucket_timestamp = (record.paid_at / 86400) * 86400; // Start of day
+        self.update_time_bucket(bucket_timestamp, record.amount);
+
+        // 4. Token-based indexing
+        self.add_to_token_index(&record.token, &record.order_id);
+
+        // 5. Update statistics
+        self.update_merchant_stats(&record.merchant_address, record);
+        self.update_payer_stats(&record.payer_address, record);
+        self.update_global_stats(record);
+    }
+
+    /// Get merchant payment index
+    fn get_merchant_payment_index(&self, merchant: &Address) -> soroban_sdk::Vec<PaymentIndexEntry> {
+        let all_indexes: Map<Address, soroban_sdk::Vec<PaymentIndexEntry>> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::MerchantPaymentIndex.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        all_indexes.get(merchant.clone()).unwrap_or_else(|| soroban_sdk::Vec::new(self.env))
+    }
+
+    /// Save merchant payment index
+    fn save_merchant_payment_index(&self, merchant: &Address, index: &soroban_sdk::Vec<PaymentIndexEntry>) {
+        let mut all_indexes: Map<Address, soroban_sdk::Vec<PaymentIndexEntry>> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::MerchantPaymentIndex.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        all_indexes.set(merchant.clone(), index.clone());
+        self.env.storage().persistent().set(
+            &DataKey::MerchantPaymentIndex.as_symbol(self.env),
+            &all_indexes,
+        );
+    }
+
+    /// Get payer payment index
+    fn get_payer_payment_index(&self, payer: &Address) -> soroban_sdk::Vec<PaymentIndexEntry> {
+        let all_indexes: Map<Address, soroban_sdk::Vec<PaymentIndexEntry>> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::PayerPaymentIndex.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        all_indexes.get(payer.clone()).unwrap_or_else(|| soroban_sdk::Vec::new(self.env))
+    }
+
+    /// Save payer payment index
+    fn save_payer_payment_index(&self, payer: &Address, index: &soroban_sdk::Vec<PaymentIndexEntry>) {
+        let mut all_indexes: Map<Address, soroban_sdk::Vec<PaymentIndexEntry>> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::PayerPaymentIndex.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        all_indexes.set(payer.clone(), index.clone());
+        self.env.storage().persistent().set(
+            &DataKey::PayerPaymentIndex.as_symbol(self.env),
+            &all_indexes,
+        );
+    }
+
+    /// Update time-based bucket
+    fn update_time_bucket(&self, bucket_timestamp: u64, amount: i128) {
+        let mut buckets: Map<u64, PaymentBucket> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::TimeBasedIndex.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        let mut bucket = buckets.get(bucket_timestamp).unwrap_or(PaymentBucket {
+            bucket_timestamp,
+            payment_count: 0,
+            total_volume: 0,
+        });
+        
+        bucket.payment_count += 1;
+        bucket.total_volume += amount;
+        
+        buckets.set(bucket_timestamp, bucket);
+        self.env.storage().persistent().set(
+            &DataKey::TimeBasedIndex.as_symbol(self.env),
+            &buckets,
+        );
+    }
+
+    /// Add to token index
+    fn add_to_token_index(&self, token: &Address, order_id: &soroban_sdk::String) {
+        let mut token_index: Map<Address, soroban_sdk::Vec<soroban_sdk::String>> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::TokenBasedIndex.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        let mut order_ids = token_index.get(token.clone()).unwrap_or_else(|| soroban_sdk::Vec::new(self.env));
+        order_ids.push_back(order_id.clone());
+        token_index.set(token.clone(), order_ids);
+        
+        self.env.storage().persistent().set(
+            &DataKey::TokenBasedIndex.as_symbol(self.env),
+            &token_index,
+        );
+    }
+
+    /// Update merchant statistics
+    fn update_merchant_stats(&self, merchant: &Address, record: &PaymentRecord) {
+        let mut stats_map: Map<Address, MerchantPaymentSummary> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::MerchantStats.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        let mut stats = stats_map.get(merchant.clone()).unwrap_or(MerchantPaymentSummary {
+            merchant_address: merchant.clone(),
+            total_received: 0,
+            payment_count: 0,
+            refund_count: 0,
+            total_refunded: 0,
+            net_received: 0,
+            active_since: record.paid_at,
+            last_payment: None,
+        });
+        
+        stats.total_received += record.amount;
+        stats.payment_count += 1;
+        stats.net_received = stats.total_received - stats.total_refunded;
+        stats.last_payment = Some(record.paid_at);
+        
+        stats_map.set(merchant.clone(), stats);
+        self.env.storage().persistent().set(
+            &DataKey::MerchantStats.as_symbol(self.env),
+            &stats_map,
+        );
+    }
+
+    /// Update payer statistics
+    fn update_payer_stats(&self, payer: &Address, record: &PaymentRecord) {
+        let mut stats_map: Map<Address, PayerPaymentSummary> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::PayerStats.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        let mut stats = stats_map.get(payer.clone()).unwrap_or(PayerPaymentSummary {
+            payer_address: payer.clone(),
+            total_spent: 0,
+            payment_count: 0,
+            unique_merchants: 0,
+            first_payment: Some(record.paid_at),
+            last_payment: None,
+        });
+        
+        stats.total_spent += record.amount;
+        stats.payment_count += 1;
+        stats.last_payment = Some(record.paid_at);
+        
+        stats_map.set(payer.clone(), stats);
+        self.env.storage().persistent().set(
+            &DataKey::PayerStats.as_symbol(self.env),
+            &stats_map,
+        );
+    }
+
+    /// Update global statistics
+    fn update_global_stats(&self, record: &PaymentRecord) {
+        let mut stats = self.env
+            .storage()
+            .persistent()
+            .get::<_, PaymentStats>(&DataKey::GlobalStats.as_symbol(self.env))
+            .unwrap_or(PaymentStats {
+                total_payments: 0,
+                total_volume: 0,
+                unique_payers: 0,
+                average_payment: 0,
+                first_payment_time: Some(record.paid_at),
+                last_payment_time: None,
+            });
+        
+        stats.total_payments += 1;
+        stats.total_volume += record.amount;
+        stats.average_payment = stats.total_volume / i128::from(stats.total_payments);
+        stats.last_payment_time = Some(record.paid_at);
+        
+        self.env.storage().persistent().set(
+            &DataKey::GlobalStats.as_symbol(self.env),
+            &stats,
+        );
+    }
+
+    // ===== Query Functions =====
+    
+    /// Get payments by merchant with pagination
+    pub fn get_merchant_payments(
+        &self,
+        merchant: &Address,
+        limit: u32,
+        offset: u32,
+    ) -> soroban_sdk::Vec<PaymentRecord> {
+        let index = self.get_merchant_payment_index(merchant);
+        let mut results = soroban_sdk::Vec::new(self.env);
+        
+        let start = offset as usize;
+        let end = (offset + limit) as usize;
+        
+        for i in start..end.min(index.len() as usize) {
+            if let Some(entry) = index.get(i as u32) {
+                if let Ok(payment) = self.get_payment(&entry.order_id) {
+                    results.push_back(payment);
+                }
+            }
+        }
+        
+        results
+    }
+
+    /// Get payments by payer with pagination
+    pub fn get_payer_payments(
+        &self,
+        payer: &Address,
+        limit: u32,
+        offset: u32,
+    ) -> soroban_sdk::Vec<PaymentRecord> {
+        let index = self.get_payer_payment_index(payer);
+        let mut results = soroban_sdk::Vec::new(self.env);
+        
+        let start = offset as usize;
+        let end = (offset + limit) as usize;
+        
+        for i in start..end.min(index.len() as usize) {
+            if let Some(entry) = index.get(i as u32) {
+                if let Ok(payment) = self.get_payment(&entry.order_id) {
+                    results.push_back(payment);
+                }
+            }
+        }
+        
+        results
+    }
+
+    /// Get merchant statistics
+    pub fn get_merchant_stats(&self, merchant: &Address) -> Option<MerchantPaymentSummary> {
+        let stats_map: Map<Address, MerchantPaymentSummary> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::MerchantStats.as_symbol(self.env))?;
+        
+        stats_map.get(merchant.clone())
+    }
+
+    /// Get payer statistics
+    pub fn get_payer_stats(&self, payer: &Address) -> Option<PayerPaymentSummary> {
+        let stats_map: Map<Address, PayerPaymentSummary> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::PayerStats.as_symbol(self.env))?;
+        
+        stats_map.get(payer.clone())
+    }
+
+    /// Get global statistics
+    pub fn get_global_stats(&self) -> Option<PaymentStats> {
+        self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::GlobalStats.as_symbol(self.env))
+    }
+
+    /// Get payments by time range
+    pub fn get_payments_by_time_range(
+        &self,
+        start_time: u64,
+        end_time: u64,
+    ) -> soroban_sdk::Vec<PaymentBucket> {
+        let buckets: Map<u64, PaymentBucket> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::TimeBasedIndex.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        let mut results = soroban_sdk::Vec::new(self.env);
+        let start_bucket = (start_time / 86400) * 86400;
+        let end_bucket = (end_time / 86400) * 86400;
+        
+        let mut current = start_bucket;
+        while current <= end_bucket {
+            if let Some(bucket) = buckets.get(current) {
+                results.push_back(bucket);
+            }
+            current += 86400;
+        }
+        
+        results
+    }
+
+    /// Compress and archive old payment records
+    pub fn compress_old_payments(&self, cutoff_time: u64) {
+        let payments = self.get_payments_map();
+        let mut compressed_archive: Map<soroban_sdk::String, CompressedPaymentRecord> = self.env
+            .storage()
+            .persistent()
+            .get(&DataKey::CompressedArchive.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env));
+        
+        for (order_id, payment) in payments.iter() {
+            if payment.paid_at < cutoff_time {
+                let status = if payment.refunded_amount == payment.amount {
+                    2 // Fully refunded
+                } else if payment.refunded_amount > 0 {
+                    1 // Partially refunded
+                } else {
+                    0 // Paid
+                };
+                
+                let compressed = CompressedPaymentRecord {
+                    order_id: order_id.clone(),
+                    merchant_address: payment.merchant_address.clone(),
+                    payer_address: payment.payer_address.clone(),
+                    token: payment.token.clone(),
+                    amount: payment.amount,
+                    paid_at: payment.paid_at,
+                    status,
+                };
+                
+                compressed_archive.set(order_id, compressed);
+            }
+        }
+        
+        self.env.storage().persistent().set(
+            &DataKey::CompressedArchive.as_symbol(self.env),
+            &compressed_archive,
+        );
+    }
+
 }

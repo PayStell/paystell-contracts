@@ -285,6 +285,90 @@ pub struct RefundRequest {
     pub approved_by: Option<Address>,
 }
 
+// ===== NEW: Payment History and Analytics Types =====
+
+/// Payment History Query Parameters
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaymentQueryParams {
+    pub start_time: Option<u64>,
+    pub end_time: Option<u64>,
+    pub min_amount: Option<i128>,
+    pub max_amount: Option<i128>,
+    pub token: Option<Address>,
+    pub limit: u32,
+    pub offset: u32,
+}
+
+/// Payment History Statistics
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaymentStats {
+    pub total_payments: u32,
+    pub total_volume: i128,
+    pub unique_payers: u32,
+    pub average_payment: i128,
+    pub first_payment_time: Option<u64>,
+    pub last_payment_time: Option<u64>,
+}
+
+/// Merchant Payment Summary
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MerchantPaymentSummary {
+    pub merchant_address: Address,
+    pub total_received: i128,
+    pub payment_count: u32,
+    pub refund_count: u32,
+    pub total_refunded: i128,
+    pub net_received: i128,
+    pub active_since: u64,
+    pub last_payment: Option<u64>,
+}
+
+/// Payer Payment Summary
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PayerPaymentSummary {
+    pub payer_address: Address,
+    pub total_spent: i128,
+    pub payment_count: u32,
+    pub unique_merchants: u32,
+    pub first_payment: Option<u64>,
+    pub last_payment: Option<u64>,
+}
+
+/// Payment Index Entry (for efficient querying)
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaymentIndexEntry {
+    pub order_id: String,
+    pub timestamp: u64,
+    pub amount: i128,
+}
+
+/// Time-based Payment Bucket (for temporal queries)
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaymentBucket {
+    pub bucket_timestamp: u64, // Start of time bucket (e.g., start of day)
+    pub payment_count: u32,
+    pub total_volume: i128,
+}
+
+/// Compressed Payment Record (for archival)
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CompressedPaymentRecord {
+    pub order_id: String,
+    pub merchant_address: Address,
+    pub payer_address: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub paid_at: u64,
+    pub status: u8, // 0: paid, 1: partially refunded, 2: fully refunded
+}
+
 // Event topics
 pub fn merchant_registered_topic(env: &soroban_sdk::Env) -> Symbol {
     Symbol::new(env, "merchant_reg")
