@@ -787,16 +787,37 @@ impl<'a> Storage<'a> {
         results
     }
 
-    /// Compress and archive old payment records
-    pub fn compress_old_payments(&self, cutoff_time: u64) {
+    /// Compress and archive old payment records in batches
+    /// Returns number of records processed in this batch
+    pub fn compress_old_payments(&self, cutoff_time: u64, batch_size: u32) -> u32 {
         let payments = self.get_payments_map();
         let mut compressed_archive: Map<soroban_sdk::String, CompressedPaymentRecord> = self.env
             .storage()
             .persistent()
             .get(&DataKey::CompressedArchive.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env));
-        
+
+        // Persistent cursor for batch progress
+        let cursor_key = DataKey::CompressionCursor.as_symbol(self.env);
+        let mut start_idx: usize = self.env
+            .storage()
+            .persistent()
+            .get(&cursor_key)
+            .unwrap_or(0u32) as usize;
+
+        let mut processed = 0u32;
+        let mut idx = 0usize;
+        let mut next_cursor = None;
+
         for (order_id, payment) in payments.iter() {
+            if idx < start_idx {
+                idx += 1;
+                continue;
+            }
+            if processed >= batch_size {
+                next_cursor = Some(idx as u32);
+                break;
+            }
             if payment.paid_at < cutoff_time {
                 let status = if payment.refunded_amount == payment.amount {
                     2 // Fully refunded
@@ -805,7 +826,7 @@ impl<'a> Storage<'a> {
                 } else {
                     0 // Paid
                 };
-                
+
                 let compressed = CompressedPaymentRecord {
                     order_id: order_id.clone(),
                     merchant_address: payment.merchant_address.clone(),
@@ -815,15 +836,26 @@ impl<'a> Storage<'a> {
                     paid_at: payment.paid_at,
                     status,
                 };
-                
+
                 compressed_archive.set(order_id, compressed);
+                processed += 1;
             }
+            idx += 1;
         }
-        
+
         self.env.storage().persistent().set(
             &DataKey::CompressedArchive.as_symbol(self.env),
             &compressed_archive,
         );
+
+        // Update or clear cursor
+        if let Some(cursor) = next_cursor {
+            self.env.storage().persistent().set(&cursor_key, &cursor);
+        } else {
+            self.env.storage().persistent().remove(&cursor_key);
+        }
+
+        processed
     }
 
 }

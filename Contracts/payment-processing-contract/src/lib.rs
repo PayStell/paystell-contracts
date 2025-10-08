@@ -1289,12 +1289,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         offset: u32,
     ) -> Result<Vec<PaymentRecord>, PaymentError> {
         let storage = Storage::new(&env);
-        
         // Validate pagination parameters
         if limit == 0 || limit > 100 {
-            return Err(PaymentError::InvalidAmount);
+            return Err(PaymentError::InvalidPaginationParams);
         }
-        
         let payments = storage.get_merchant_payments(&merchant, limit, offset);
         Ok(payments)
     }
@@ -1306,12 +1304,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         offset: u32,
     ) -> Result<Vec<PaymentRecord>, PaymentError> {
         let storage = Storage::new(&env);
-        
         // Validate pagination parameters
         if limit == 0 || limit > 100 {
-            return Err(PaymentError::InvalidAmount);
+            return Err(PaymentError::InvalidPaginationParams);
         }
-        
         let payments = storage.get_payer_payments(&payer, limit, offset);
         Ok(payments)
     }
@@ -1329,12 +1325,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         params: PaymentQueryParams,
     ) -> Result<Vec<PaymentRecord>, PaymentError> {
         let storage = Storage::new(&env);
-        
         // Validate pagination parameters
         if params.limit == 0 || params.limit > 100 {
-            return Err(PaymentError::InvalidAmount);
+            return Err(PaymentError::InvalidPaginationParams);
         }
-        
         // Get all payments from storage
         let all_payments = storage.get_payments_map();
         let mut filtered_payments = Vec::new(&env);
@@ -1445,35 +1439,39 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     ) -> Result<Vec<PaymentRecord>, PaymentError> {
         // Validate pagination parameters
         if limit == 0 || limit > 100 {
-            return Err(PaymentError::InvalidAmount);
+            return Err(PaymentError::InvalidPaginationParams);
         }
-        
         let storage = Storage::new(&env);
-        let all_payments = storage.get_payments_map();
-        let mut token_payments = Vec::new(&env);
-        
+        // Retrieve token index
+        let token_index: Map<Address, soroban_sdk::Vec<soroban_sdk::String>> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TokenBasedIndex.as_symbol(&env))
+            .unwrap_or_else(|| Map::new(&env));
+        let order_ids = token_index
+            .get(token)
+            .unwrap_or_else(|| soroban_sdk::Vec::new(&env));
+        let mut results = Vec::new(&env);
         let mut count = 0u32;
         let mut skipped = 0u32;
-        
-        for (_order_id, payment) in all_payments.iter() {
-            if payment.token == token {
+        for i in 0..order_ids.len() {
+            if let Some(order_id) = order_ids.get(i) {
                 // Handle offset
                 if skipped < offset {
                     skipped += 1;
                     continue;
                 }
-                
-                token_payments.push_back(payment);
-                count += 1;
-                
-                // Check limit
-                if count >= limit {
-                    break;
+                if let Ok(payment) = storage.get_payment(&order_id) {
+                    results.push_back(payment);
+                    count += 1;
+                    // Check limit
+                    if count >= limit {
+                        break;
+                    }
                 }
             }
         }
-        
-        Ok(token_payments)
+        Ok(results)
     }
 
     fn archive_old_payments(
