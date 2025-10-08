@@ -2,7 +2,12 @@ use soroban_sdk::{
     contracttype, log, Address, Env, Map, Symbol,
 };
 use crate::{
-    types::{Merchant, NonceTracker, Fee, MultiSigPayment, PaymentRecord, RefundRequest, MultiSigPaymentRecord},
+    types::{
+        Merchant, NonceTracker, Fee, MultiSigPayment, PaymentRecord, RefundRequest, 
+        MultiSigPaymentRecord,
+        PaymentIndexEntry, PaymentBucket, MerchantPaymentSummary, 
+        PayerPaymentSummary, PaymentStats, CompressedPaymentRecord,
+    },
     error::PaymentError,
 };
 
@@ -456,7 +461,7 @@ impl<'a> Storage<'a> {
             .get(&DataKey::Admin.as_symbol(self.env))
     }
 
-    fn get_payments_map(&self) -> Map<soroban_sdk::String, PaymentRecord> {
+   pub fn get_payments_map(&self) -> Map<soroban_sdk::String, PaymentRecord> {
         self.env.storage().instance()
             .get(&DataKey::Payments.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))

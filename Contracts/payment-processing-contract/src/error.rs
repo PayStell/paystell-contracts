@@ -66,6 +66,7 @@ impl fmt::Display for PaymentError {
             PaymentError::OrderExpired => write!(f, "Payment order has expired"),
             PaymentError::InvalidToken => write!(f, "Token not supported by merchant"),
 
+
             // Merchant profile validation errors
             PaymentError::InvalidName => write!(f, "Invalid merchant name (must be 1-100 characters)"),
             PaymentError::InvalidDescription => write!(f, "Invalid description (max 500 characters)"),
@@ -102,6 +103,8 @@ impl fmt::Display for PaymentError {
             PaymentError::ExceedsOriginalAmount => write!(f, "Refund exceeds original amount"),
             PaymentError::InvalidRefundStatus => write!(f, "Invalid refund status transition"),
             PaymentError::InsufficientBalance => write!(f, "Insufficient balance for refund"),
+             PaymentError::InvalidPaginationParams => write!(f, "Invalid pagination parameters"),
+            PaymentError::QueryLimitExceeded => write!(f, "Query limit exceeded"),
         }
     }
 }

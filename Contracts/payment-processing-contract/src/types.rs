@@ -366,7 +366,7 @@ pub struct CompressedPaymentRecord {
     pub token: Address,
     pub amount: i128,
     pub paid_at: u64,
-    pub status: u8, // 0: paid, 1: partially refunded, 2: fully refunded
+    pub status: u32, // 0: paid, 1: partially refunded, 2: fully refunded
 }
 
 // Event topics

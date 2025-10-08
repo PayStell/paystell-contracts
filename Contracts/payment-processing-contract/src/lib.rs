@@ -19,8 +19,9 @@ use crate::{
         MerchantCategory, ProfileUpdateData, MerchantRegisteredEvent, ProfileUpdatedEvent, 
         MerchantDeactivatedEvent, LimitsUpdatedEvent, merchant_registered_topic, 
         profile_updated_topic, merchant_deactivated_topic, limits_updated_topic,
-        RefundRequest, RefundStatus, MultiSigPaymentRecord
-           PaymentQueryParams, PaymentStats, MerchantPaymentSummary, PayerPaymentSummary,
+       RefundRequest, RefundStatus, MultiSigPaymentRecord,
+        // NEW IMPORTS
+        PaymentQueryParams, PaymentStats, MerchantPaymentSummary, PayerPaymentSummary,
         PaymentIndexEntry, PaymentBucket, CompressedPaymentRecord,
     },
     storage::Storage,
@@ -158,6 +159,62 @@ pub trait PaymentProcessingTrait {
     fn reject_refund(env: Env, caller: Address, refund_id: String) -> Result<(), PaymentError>;
     fn execute_refund(env: Env, refund_id: String) -> Result<(), PaymentError>;
     fn get_refund_status(env: Env, refund_id: String) -> Result<RefundStatus, PaymentError>;
+
+    // Payment History Query and Management Functions
+    fn get_merchant_payment_history(
+        env: Env,
+        merchant: Address,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<PaymentRecord>, PaymentError>;
+
+    fn get_payer_payment_history(
+        env: Env,
+        payer: Address,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<PaymentRecord>, PaymentError>;
+
+    fn get_payment_by_order_id(
+        env: Env,
+        order_id: String,
+    ) -> Result<PaymentRecord, PaymentError>;
+
+    fn query_payments(
+        env: Env,
+        params: PaymentQueryParams,
+    ) -> Result<Vec<PaymentRecord>, PaymentError>;
+
+    fn get_merchant_payment_stats(
+        env: Env,
+        merchant: Address,
+    ) -> Result<MerchantPaymentSummary, PaymentError>;
+
+    fn get_payer_payment_stats(
+        env: Env,
+        payer: Address,
+    ) -> Result<PayerPaymentSummary, PaymentError>;
+
+    fn get_global_payment_stats(env: Env) -> Result<PaymentStats, PaymentError>;
+
+    fn get_payments_by_time_range(
+        env: Env,
+        start_time: u64,
+        end_time: u64,
+    ) -> Result<Vec<PaymentBucket>, PaymentError>;
+
+    fn get_payments_by_token(
+        env: Env,
+        token: Address,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<PaymentRecord>, PaymentError>;
+
+    fn archive_old_payments(
+        env: Env,
+        admin: Address,
+        cutoff_time: u64,
+    ) -> Result<(), PaymentError>;
 }
 
 #[contract]
@@ -520,6 +577,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             refunded_amount: 0,
         };
         storage.save_payment(&payment_record);
+        
+        // Index the payment for efficient querying
+        storage.index_payment(&payment_record);
 
         Ok(())
     }
@@ -1215,10 +1275,237 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok(())
     }
 
-    fn get_refund_status(env: Env, refund_id: String) -> Result<RefundStatus, PaymentError> {
+      fn get_refund_status(env: Env, refund_id: String) -> Result<RefundStatus, PaymentError> {
         let storage = Storage::new(&env);
         let req = storage.get_refund(&refund_id)?;
         Ok(req.status)
+    }
+
+    // Payment History Query and Management Functions
+     fn get_merchant_payment_history(
+        env: Env,
+        merchant: Address,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<PaymentRecord>, PaymentError> {
+        let storage = Storage::new(&env);
+        
+        // Validate pagination parameters
+        if limit == 0 || limit > 100 {
+            return Err(PaymentError::InvalidAmount);
+        }
+        
+        let payments = storage.get_merchant_payments(&merchant, limit, offset);
+        Ok(payments)
+    }
+
+    fn get_payer_payment_history(
+        env: Env,
+        payer: Address,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<PaymentRecord>, PaymentError> {
+        let storage = Storage::new(&env);
+        
+        // Validate pagination parameters
+        if limit == 0 || limit > 100 {
+            return Err(PaymentError::InvalidAmount);
+        }
+        
+        let payments = storage.get_payer_payments(&payer, limit, offset);
+        Ok(payments)
+    }
+
+    fn get_payment_by_order_id(
+        env: Env,
+        order_id: String,
+    ) -> Result<PaymentRecord, PaymentError> {
+        let storage = Storage::new(&env);
+        storage.get_payment(&order_id)
+    }
+
+    fn query_payments(
+        env: Env,
+        params: PaymentQueryParams,
+    ) -> Result<Vec<PaymentRecord>, PaymentError> {
+        let storage = Storage::new(&env);
+        
+        // Validate pagination parameters
+        if params.limit == 0 || params.limit > 100 {
+            return Err(PaymentError::InvalidAmount);
+        }
+        
+        // Get all payments from storage
+        let all_payments = storage.get_payments_map();
+        let mut filtered_payments = Vec::new(&env);
+        
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+        
+        for (_order_id, payment) in all_payments.iter() {
+            // Apply filters
+            let mut matches = true;
+            
+            // Time range filter
+            if let Some(start_time) = params.start_time {
+                if payment.paid_at < start_time {
+                    matches = false;
+                }
+            }
+            if let Some(end_time) = params.end_time {
+                if payment.paid_at > end_time {
+                    matches = false;
+                }
+            }
+            
+            // Amount range filter
+            if let Some(min_amount) = params.min_amount {
+                if payment.amount < min_amount {
+                    matches = false;
+                }
+            }
+            if let Some(max_amount) = params.max_amount {
+                if payment.amount > max_amount {
+                    matches = false;
+                }
+            }
+            
+            // Token filter
+            if let Some(ref token) = params.token {
+                if payment.token != *token {
+                    matches = false;
+                }
+            }
+            
+            if matches {
+                // Handle offset
+                if skipped < params.offset {
+                    skipped += 1;
+                    continue;
+                }
+                
+                // Add to results
+                filtered_payments.push_back(payment);
+                count += 1;
+                
+                // Check limit
+                if count >= params.limit {
+                    break;
+                }
+            }
+        }
+        
+        Ok(filtered_payments)
+    }
+
+    fn get_merchant_payment_stats(
+        env: Env,
+        merchant: Address,
+    ) -> Result<MerchantPaymentSummary, PaymentError> {
+        let storage = Storage::new(&env);
+        storage.get_merchant_stats(&merchant)
+            .ok_or(PaymentError::MerchantNotFound)
+    }
+
+    fn get_payer_payment_stats(
+        env: Env,
+        payer: Address,
+    ) -> Result<PayerPaymentSummary, PaymentError> {
+        let storage = Storage::new(&env);
+        storage.get_payer_stats(&payer)
+            .ok_or(PaymentError::PaymentNotFound)
+    }
+
+    fn get_global_payment_stats(env: Env) -> Result<PaymentStats, PaymentError> {
+        let storage = Storage::new(&env);
+        storage.get_global_stats()
+            .ok_or(PaymentError::PaymentNotFound)
+    }
+
+    fn get_payments_by_time_range(
+        env: Env,
+        start_time: u64,
+        end_time: u64,
+    ) -> Result<Vec<PaymentBucket>, PaymentError> {
+        // Validate time range
+        if start_time >= end_time {
+            return Err(PaymentError::InvalidAmount);
+        }
+        
+        let storage = Storage::new(&env);
+        let buckets = storage.get_payments_by_time_range(start_time, end_time);
+        Ok(buckets)
+    }
+
+    fn get_payments_by_token(
+        env: Env,
+        token: Address,
+        limit: u32,
+        offset: u32,
+    ) -> Result<Vec<PaymentRecord>, PaymentError> {
+        // Validate pagination parameters
+        if limit == 0 || limit > 100 {
+            return Err(PaymentError::InvalidAmount);
+        }
+        
+        let storage = Storage::new(&env);
+        let all_payments = storage.get_payments_map();
+        let mut token_payments = Vec::new(&env);
+        
+        let mut count = 0u32;
+        let mut skipped = 0u32;
+        
+        for (_order_id, payment) in all_payments.iter() {
+            if payment.token == token {
+                // Handle offset
+                if skipped < offset {
+                    skipped += 1;
+                    continue;
+                }
+                
+                token_payments.push_back(payment);
+                count += 1;
+                
+                // Check limit
+                if count >= limit {
+                    break;
+                }
+            }
+        }
+        
+        Ok(token_payments)
+    }
+
+    fn archive_old_payments(
+        env: Env,
+        admin: Address,
+        cutoff_time: u64,
+    ) -> Result<(), PaymentError> {
+        // Require admin authorization
+        admin.require_auth();
+        
+        let storage = Storage::new(&env);
+        
+        // Verify admin
+        let stored_admin = storage.get_admin()
+            .ok_or(PaymentError::AdminNotFound)?;
+        
+        if stored_admin != admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+        
+        // Validate cutoff time (must be in the past)
+        if cutoff_time >= env.ledger().timestamp() {
+            return Err(PaymentError::InvalidAmount);
+        }
+        
+        // Perform compression and archival
+        storage.compress_old_payments(cutoff_time);
+        
+        // Emit event
+        log!(&env, "PaymentsArchived: cutoff_time={}", cutoff_time);
+        
+        Ok(())
     }
 }
 
@@ -1353,60 +1640,4 @@ impl PaymentProcessingContract {
 
         Ok(())
     }
-// Payment History Query and Management Functions
-    fn get_merchant_payment_history(
-        env: Env,
-        merchant: Address,
-        limit: u32,
-        offset: u32,
-    ) -> Result<Vec<PaymentRecord>, PaymentError>;
-
-    fn get_payer_payment_history(
-        env: Env,
-        payer: Address,
-        limit: u32,
-        offset: u32,
-    ) -> Result<Vec<PaymentRecord>, PaymentError>;
-
-    fn get_payment_by_order_id(
-        env: Env,
-        order_id: String,
-    ) -> Result<PaymentRecord, PaymentError>;
-
-    fn query_payments(
-        env: Env,
-        params: PaymentQueryParams,
-    ) -> Result<Vec<PaymentRecord>, PaymentError>;
-
-    fn get_merchant_payment_stats(
-        env: Env,
-        merchant: Address,
-    ) -> Result<MerchantPaymentSummary, PaymentError>;
-
-    fn get_payer_payment_stats(
-        env: Env,
-        payer: Address,
-    ) -> Result<PayerPaymentSummary, PaymentError>;
-
-    fn get_global_payment_stats(env: Env) -> Result<PaymentStats, PaymentError>;
-
-    fn get_payments_by_time_range(
-        env: Env,
-        start_time: u64,
-        end_time: u64,
-    ) -> Result<Vec<PaymentBucket>, PaymentError>;
-
-    fn get_payments_by_token(
-        env: Env,
-        token: Address,
-        limit: u32,
-        offset: u32,
-    ) -> Result<Vec<PaymentRecord>, PaymentError>;
-
-    fn archive_old_payments(
-        env: Env,
-        admin: Address,
-        cutoff_time: u64,
-    ) -> Result<(), PaymentError>;
-
 }
