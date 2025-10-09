@@ -1497,8 +1497,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             return Err(PaymentError::InvalidAmount);
         }
         
-        // Perform compression and archival
-        storage.compress_old_payments(cutoff_time);
+         // Perform compression and archival (batch size of 100)
+      let batch_size = 100u32;
+        storage.compress_old_payments(cutoff_time, batch_size);
         
         // Emit event
         log!(&env, "PaymentsArchived: cutoff_time={}", cutoff_time);
