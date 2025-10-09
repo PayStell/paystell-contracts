@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+mod test_payment_history;
+
+
 use soroban_sdk::{
     testutils::{Address as _, Ledger}, 
     Address, Env, String, BytesN, Vec, Symbol,

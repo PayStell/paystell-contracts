@@ -50,6 +50,8 @@ pub enum PaymentError {
     ExceedsOriginalAmount = 34,
     InvalidRefundStatus = 35,
     InsufficientBalance = 36,
+    InvalidPaginationParams = 40,
+    QueryLimitExceeded = 41,
 }
 
 impl fmt::Display for PaymentError {
@@ -63,6 +65,7 @@ impl fmt::Display for PaymentError {
             PaymentError::InvalidAmount => write!(f, "Invalid amount"),
             PaymentError::OrderExpired => write!(f, "Payment order has expired"),
             PaymentError::InvalidToken => write!(f, "Token not supported by merchant"),
+
 
             // Merchant profile validation errors
             PaymentError::InvalidName => write!(f, "Invalid merchant name (must be 1-100 characters)"),
@@ -100,6 +103,8 @@ impl fmt::Display for PaymentError {
             PaymentError::ExceedsOriginalAmount => write!(f, "Refund exceeds original amount"),
             PaymentError::InvalidRefundStatus => write!(f, "Invalid refund status transition"),
             PaymentError::InsufficientBalance => write!(f, "Insufficient balance for refund"),
+             PaymentError::InvalidPaginationParams => write!(f, "Invalid pagination parameters"),
+            PaymentError::QueryLimitExceeded => write!(f, "Query limit exceeded"),
         }
     }
 }
