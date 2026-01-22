@@ -50,6 +50,13 @@ pub enum PaymentError {
     ExceedsOriginalAmount = 34,
     InvalidRefundStatus = 35,
     InsufficientBalance = 36,
+
+    // Payment history query errors
+    InvalidQueryLimit = 37,
+    InvalidDateRange = 38,
+    InvalidCursor = 39,
+    QueryTooComplex = 40,
+    UnauthorizedQuery = 41,
 }
 
 impl fmt::Display for PaymentError {
@@ -100,6 +107,13 @@ impl fmt::Display for PaymentError {
             PaymentError::ExceedsOriginalAmount => write!(f, "Refund exceeds original amount"),
             PaymentError::InvalidRefundStatus => write!(f, "Invalid refund status transition"),
             PaymentError::InsufficientBalance => write!(f, "Insufficient balance for refund"),
+
+            // Payment history query errors
+            PaymentError::InvalidQueryLimit => write!(f, "Query limit exceeds maximum (100)"),
+            PaymentError::InvalidDateRange => write!(f, "Invalid date range (end must be >= start)"),
+            PaymentError::InvalidCursor => write!(f, "Invalid cursor (order_id not found)"),
+            PaymentError::QueryTooComplex => write!(f, "Query too complex (would exceed gas limits)"),
+            PaymentError::UnauthorizedQuery => write!(f, "Unauthorized query access"),
         }
     }
 }
