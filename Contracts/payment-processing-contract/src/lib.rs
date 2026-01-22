@@ -5,6 +5,9 @@ mod storage;
 mod types;
 mod helper;
 
+#[cfg(test)]
+mod test;
+
 use soroban_sdk::{
     contract, contractimpl, token, Address, Env,
     Vec, BytesN, Bytes, xdr::ToXdr, Map, log, String, Symbol, panic_with_error,
@@ -19,11 +22,13 @@ use crate::{
         MerchantCategory, ProfileUpdateData, MerchantRegisteredEvent, ProfileUpdatedEvent, 
         MerchantDeactivatedEvent, LimitsUpdatedEvent, merchant_registered_topic, 
         profile_updated_topic, merchant_deactivated_topic, limits_updated_topic,
-        RefundRequest, RefundStatus, MultiSigPaymentRecord
+        RefundRequest, RefundStatus, MultiSigPaymentRecord,
+        PaymentQueryFilter, PaymentQueryResult, PaymentStats, SortField, SortOrder, PaymentRecordStatus
     },
     storage::Storage,
     helper::{validate_name, validate_description, validate_contact_info, 
-             validate_transaction_limit, DEFAULT_TRANSACTION_LIMIT},
+             validate_transaction_limit, DEFAULT_TRANSACTION_LIMIT,
+             validate_query_limit, validate_query_filter, validate_cursor},
 };
 
 /// Optimized payment-processing-contract trait with gas optimization features
@@ -156,6 +161,65 @@ pub trait PaymentProcessingTrait {
     fn reject_refund(env: Env, caller: Address, refund_id: String) -> Result<(), PaymentError>;
     fn execute_refund(env: Env, refund_id: String) -> Result<(), PaymentError>;
     fn get_refund_status(env: Env, refund_id: String) -> Result<RefundStatus, PaymentError>;
+
+    // Payment History Query Operations
+    fn get_merchant_payment_history(
+        env: Env,
+        merchant: Address,
+        cursor: Option<String>,
+        limit: u32,
+        filter: Option<PaymentQueryFilter>,
+        sort_field: Option<SortField>,
+        sort_order: Option<SortOrder>,
+    ) -> Result<PaymentQueryResult, PaymentError>;
+
+    fn get_payer_payment_history(
+        env: Env,
+        payer: Address,
+        cursor: Option<String>,
+        limit: u32,
+        filter: Option<PaymentQueryFilter>,
+        sort_field: Option<SortField>,
+        sort_order: Option<SortOrder>,
+    ) -> Result<PaymentQueryResult, PaymentError>;
+
+    fn get_payment_by_id(
+        env: Env,
+        caller: Address,
+        order_id: String,
+    ) -> Result<PaymentRecord, PaymentError>;
+
+    fn get_global_payment_stats(
+        env: Env,
+        admin: Address,
+        date_start: Option<u64>,
+        date_end: Option<u64>,
+    ) -> Result<PaymentStats, PaymentError>;
+
+    // Payment History Management Operations
+    fn update_payment_status(
+        env: Env,
+        caller: Address,
+        order_id: String,
+        refunded_amount: i128,
+    ) -> Result<(), PaymentError>;
+
+    fn archive_payment_record(
+        env: Env,
+        admin: Address,
+        order_id: String,
+    ) -> Result<(), PaymentError>;
+
+    fn cleanup_expired_payments(
+        env: Env,
+        admin: Address,
+    ) -> Result<u32, PaymentError>;
+
+    fn set_payment_cleanup_period(
+        env: Env,
+        admin: Address,
+        period: u64,
+    ) -> Result<(), PaymentError>;
 }
 
 #[contract]
@@ -518,6 +582,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             refunded_amount: 0,
         };
         storage.save_payment(&payment_record);
+
+        // Maintain payment indices for efficient querying
+        storage.save_merchant_payment_index(&order.merchant_address, &order.order_id);
+        storage.save_payer_payment_index(&payer, &order.order_id);
 
         Ok(())
     }
@@ -1217,6 +1285,398 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let storage = Storage::new(&env);
         let req = storage.get_refund(&refund_id)?;
         Ok(req.status)
+    }
+
+    // Payment History Query Operations
+    fn get_merchant_payment_history(
+        env: Env,
+        merchant: Address,
+        cursor: Option<String>,
+        limit: u32,
+        filter: Option<PaymentQueryFilter>,
+        sort_field: Option<SortField>,
+        sort_order: Option<SortOrder>,
+    ) -> Result<PaymentQueryResult, PaymentError> {
+        // Require authorization - merchant or admin
+        Self::require_merchant_access(&env, &merchant)?;
+
+        // Validate query parameters
+        validate_query_limit(limit)?;
+        if let Some(ref f) = filter {
+            validate_query_filter(f)?;
+        }
+        if let Some(ref c) = cursor {
+            let storage = Storage::new(&env);
+            validate_cursor(&env, &Some(c.clone()), &storage)?;
+        }
+
+        let storage = Storage::new(&env);
+        let default_filter = PaymentQueryFilter {
+            date_start: None,
+            date_end: None,
+            amount_min: None,
+            amount_max: None,
+            token: None,
+            status: PaymentRecordStatus::Any,
+        };
+        let filter = filter.unwrap_or(default_filter);
+
+        // Get merchant payment indices
+        let order_ids = storage.get_merchant_payment_indices(&merchant);
+
+        // Apply filters
+        let filtered = storage.query_payments_with_filters(&order_ids, &filter);
+
+        // Sort
+        let sort_field = sort_field.unwrap_or(SortField::Date);
+        let sort_order = sort_order.unwrap_or(SortOrder::Descending);
+        let sorted = storage.sort_payments(filtered, &sort_field, &sort_order);
+
+        // Paginate
+        let (paginated, next_cursor) = storage.paginate_payments(sorted, cursor, limit);
+
+        Ok(PaymentQueryResult {
+            records: paginated,
+            next_cursor,
+            total_count: order_ids.len() as u32,
+        })
+    }
+
+    fn get_payer_payment_history(
+        env: Env,
+        payer: Address,
+        cursor: Option<String>,
+        limit: u32,
+        filter: Option<PaymentQueryFilter>,
+        sort_field: Option<SortField>,
+        sort_order: Option<SortOrder>,
+    ) -> Result<PaymentQueryResult, PaymentError> {
+        // Require authorization - payer must match caller
+        Self::require_payer_access(&env, &payer)?;
+
+        // Validate query parameters
+        validate_query_limit(limit)?;
+        if let Some(ref f) = filter {
+            validate_query_filter(f)?;
+        }
+        if let Some(ref c) = cursor {
+            let storage = Storage::new(&env);
+            validate_cursor(&env, &Some(c.clone()), &storage)?;
+        }
+
+        let storage = Storage::new(&env);
+        let default_filter = PaymentQueryFilter {
+            date_start: None,
+            date_end: None,
+            amount_min: None,
+            amount_max: None,
+            token: None,
+            status: PaymentRecordStatus::Any,
+        };
+        let filter = filter.unwrap_or(default_filter);
+
+        // Get payer payment indices
+        let order_ids = storage.get_payer_payment_indices(&payer);
+
+        // Apply filters
+        let filtered = storage.query_payments_with_filters(&order_ids, &filter);
+
+        // Sort
+        let sort_field = sort_field.unwrap_or(SortField::Date);
+        let sort_order = sort_order.unwrap_or(SortOrder::Descending);
+        let sorted = storage.sort_payments(filtered, &sort_field, &sort_order);
+
+        // Paginate
+        let (paginated, next_cursor) = storage.paginate_payments(sorted, cursor, limit);
+
+        Ok(PaymentQueryResult {
+            records: paginated,
+            next_cursor,
+            total_count: order_ids.len() as u32,
+        })
+    }
+
+    fn get_payment_by_id(
+        env: Env,
+        caller: Address,
+        order_id: String,
+    ) -> Result<PaymentRecord, PaymentError> {
+        let storage = Storage::new(&env);
+        let payment = storage.get_payment(&order_id)?;
+
+        // Verify authorization: merchant, payer, or admin
+        let is_merchant = payment.merchant_address == caller;
+        let is_payer = payment.payer_address == caller;
+        let is_admin = storage.get_admin().map(|a| a == caller).unwrap_or(false);
+
+        if !is_merchant && !is_payer && !is_admin {
+            return Err(PaymentError::UnauthorizedQuery);
+        }
+
+        Ok(payment)
+    }
+
+    fn get_global_payment_stats(
+        env: Env,
+        admin: Address,
+        date_start: Option<u64>,
+        date_end: Option<u64>,
+    ) -> Result<PaymentStats, PaymentError> {
+        // Require admin authorization
+        Self::require_admin_access(&env, &admin)?;
+
+        // Validate date range
+        if let (Some(start), Some(end)) = (date_start, date_end) {
+            if end < start {
+                return Err(PaymentError::InvalidDateRange);
+            }
+        }
+
+        let storage = Storage::new(&env);
+        let payments = storage.get_payments_map();
+
+        let mut total_payments = 0u32;
+        let mut total_amount = 0i128;
+        let mut total_refunded = 0i128;
+        let mut completed_count = 0u32;
+        let mut partially_refunded_count = 0u32;
+        let mut fully_refunded_count = 0u32;
+
+        for payment in payments.values() {
+            // Apply date filter if provided
+            if let Some(start) = date_start {
+                if payment.paid_at < start {
+                    continue;
+                }
+            }
+            if let Some(end) = date_end {
+                if payment.paid_at > end {
+                    continue;
+                }
+            }
+
+            total_payments += 1;
+            total_amount += payment.amount;
+            total_refunded += payment.refunded_amount;
+
+            match payment.get_status() {
+                crate::types::PaymentRecordStatus::Completed => completed_count += 1,
+                crate::types::PaymentRecordStatus::PartiallyRefunded => partially_refunded_count += 1,
+                crate::types::PaymentRecordStatus::FullyRefunded => fully_refunded_count += 1,
+                crate::types::PaymentRecordStatus::Any => {
+                    // This should never happen from get_status(), but included for exhaustiveness
+                }
+            }
+        }
+
+        let average_amount = if total_payments > 0 {
+            total_amount / (total_payments as i128)
+        } else {
+            0i128
+        };
+
+        Ok(PaymentStats {
+            total_payments,
+            total_amount,
+            average_amount,
+            total_refunded,
+            completed_count,
+            partially_refunded_count,
+            fully_refunded_count,
+        })
+    }
+
+    // Payment History Management Operations
+    fn update_payment_status(
+        env: Env,
+        caller: Address,
+        order_id: String,
+        refunded_amount: i128,
+    ) -> Result<(), PaymentError> {
+        caller.require_auth();
+
+        let storage = Storage::new(&env);
+        let mut payment = storage.get_payment(&order_id)?;
+
+        // Verify authorization: merchant or admin
+        let is_merchant = payment.merchant_address == caller;
+        let is_admin = storage.get_admin().map(|a| a == caller).unwrap_or(false);
+
+        if !is_merchant && !is_admin {
+            return Err(PaymentError::UnauthorizedQuery);
+        }
+
+        // Validate refunded amount doesn't exceed original amount
+        if refunded_amount > payment.amount {
+            return Err(PaymentError::ExceedsOriginalAmount);
+        }
+        if refunded_amount < 0 {
+            return Err(PaymentError::InvalidAmount);
+        }
+
+        payment.refunded_amount = refunded_amount;
+        storage.update_payment(&payment);
+
+        env.events().publish(
+            ("payment_status_updated",),
+            (order_id, refunded_amount),
+        );
+
+        Ok(())
+    }
+
+    fn archive_payment_record(
+        env: Env,
+        admin: Address,
+        order_id: String,
+    ) -> Result<(), PaymentError> {
+        // Require admin authorization
+        Self::require_admin_access(&env, &admin)?;
+
+        let storage = Storage::new(&env);
+        let payment = storage.get_payment(&order_id)?;
+
+        // Archive the payment
+        storage.archive_payment_record(&payment);
+
+        // Remove from active payments
+        let mut payments = storage.get_payments_map();
+        payments.remove(order_id.clone());
+
+        // Remove from indices
+        storage.remove_merchant_payment_index(&payment.merchant_address, &order_id);
+        storage.remove_payer_payment_index(&payment.payer_address, &order_id);
+
+        env.events().publish(
+            ("payment_archived",),
+            order_id,
+        );
+
+        Ok(())
+    }
+
+    fn cleanup_expired_payments(
+        env: Env,
+        admin: Address,
+    ) -> Result<u32, PaymentError> {
+        // Require admin authorization
+        Self::require_admin_access(&env, &admin)?;
+
+        let storage = Storage::new(&env);
+        let cleanup_period = storage.get_cleanup_period();
+        let current_time = env.ledger().timestamp();
+        let cutoff_time = current_time.saturating_sub(cleanup_period);
+
+        let payments = storage.get_payments_map();
+        let mut cleaned_count = 0u32;
+        let mut to_cleanup = Vec::new(&env);
+
+        // Find expired payments
+        for payment in payments.values() {
+            if payment.paid_at < cutoff_time {
+                to_cleanup.push_back(payment.order_id.clone());
+            }
+        }
+
+        // Archive and remove expired payments
+        for order_id in to_cleanup.iter() {
+            if let Ok(payment) = storage.get_payment(&order_id) {
+                // Archive before removal
+                storage.archive_payment_record(&payment);
+
+                // Remove from active payments
+                let mut payments_map = storage.get_payments_map();
+                payments_map.remove(order_id.clone());
+                // Save updated map
+                env.storage().instance().set(
+                    &crate::storage::DataKey::Payments.as_symbol(&env),
+                    &payments_map,
+                );
+
+                // Remove from indices
+                storage.remove_merchant_payment_index(&payment.merchant_address, &order_id);
+                storage.remove_payer_payment_index(&payment.payer_address, &order_id);
+
+                cleaned_count += 1;
+            }
+        }
+
+        env.events().publish(
+            ("payments_cleaned_up",),
+            cleaned_count,
+        );
+
+        Ok(cleaned_count)
+    }
+
+    fn set_payment_cleanup_period(
+        env: Env,
+        admin: Address,
+        period: u64,
+    ) -> Result<(), PaymentError> {
+        // Require admin authorization
+        Self::require_admin_access(&env, &admin)?;
+
+        // Validate period (max 10 years)
+        const MAX_CLEANUP_PERIOD: u64 = 10 * 365 * 24 * 60 * 60;
+        if period > MAX_CLEANUP_PERIOD {
+            return Err(PaymentError::InvalidDateRange);
+        }
+
+        let storage = Storage::new(&env);
+        storage.set_cleanup_period(period);
+
+        env.events().publish(
+            ("cleanup_period_set",),
+            period,
+        );
+
+        Ok(())
+    }
+}
+
+// Authorization helper functions
+impl PaymentProcessingContract {
+    /// Require merchant access (merchant or admin)
+    fn require_merchant_access(env: &Env, merchant: &Address) -> Result<(), PaymentError> {
+        let storage = Storage::new(env);
+        let caller = merchant.clone();
+        caller.require_auth();
+
+        // Check if caller is the merchant or admin
+        let is_merchant = caller == *merchant;
+        let is_admin = storage.get_admin().map(|a| a == caller).unwrap_or(false);
+
+        if !is_merchant && !is_admin {
+            return Err(PaymentError::UnauthorizedQuery);
+        }
+
+        Ok(())
+    }
+
+    /// Require payer access (payer must match caller)
+    fn require_payer_access(_env: &Env, payer: &Address) -> Result<(), PaymentError> {
+        let caller = payer.clone();
+        caller.require_auth();
+
+        if caller != *payer {
+            return Err(PaymentError::UnauthorizedQuery);
+        }
+
+        Ok(())
+    }
+
+    /// Require admin access
+    fn require_admin_access(env: &Env, admin: &Address) -> Result<(), PaymentError> {
+        admin.require_auth();
+        let storage = Storage::new(env);
+        let stored_admin = storage.get_admin().ok_or(PaymentError::AdminNotFound)?;
+
+        if stored_admin != *admin {
+            return Err(PaymentError::NotAuthorized);
+        }
+
+        Ok(())
     }
 }
 
