@@ -1,8 +1,8 @@
 use soroban_sdk::{
-    contracttype, log, Address, Env, Map, Symbol,
+    contracttype, log, Address, Env, Map, Symbol, String, Vec,
 };
 use crate::{
-    types::{Merchant, NonceTracker, Fee, MultiSigPayment, PaymentRecord, RefundRequest, MultiSigPaymentRecord},
+    types::{Merchant, NonceTracker, Fee, MultiSigPayment, PaymentRecord, RefundRequest, MultiSigPaymentRecord, PaymentQueryFilter, SortField, SortOrder},
     error::PaymentError,
 };
 
@@ -25,10 +25,15 @@ pub enum DataKey {
     // Payment records and refunds
     Payments,
     Refunds,
+    // Payment history query indices
+    MerchantPaymentIndices,  // Map<Address, Vec<String>> - merchant -> order_ids
+    PayerPaymentIndices,     // Map<Address, Vec<String>> - payer -> order_ids
+    PaymentCleanupPeriod,    // u64 - cleanup period in seconds
+    PaymentArchive,          // Map<String, PaymentRecord> - archived payments
 }
 
 impl DataKey {
-    fn as_symbol(self, env: &Env) -> Symbol {
+    pub fn as_symbol(self, env: &Env) -> Symbol {
         match self {
             DataKey::Initialized => Symbol::new(env, "initialized"),
             DataKey::Merchants => Symbol::new(env, "merchants"),
@@ -43,6 +48,10 @@ impl DataKey {
             DataKey::Fee => Symbol::new(env, "fee"),
             DataKey::Payments => Symbol::new(env, "payments"),
             DataKey::Refunds => Symbol::new(env, "refunds"),
+            DataKey::MerchantPaymentIndices => Symbol::new(env, "merchant_pay_idx"),
+            DataKey::PayerPaymentIndices => Symbol::new(env, "payer_pay_idx"),
+            DataKey::PaymentCleanupPeriod => Symbol::new(env, "pay_cleanup_period"),
+            DataKey::PaymentArchive => Symbol::new(env, "pay_archive"),
         }
     }
 }
@@ -438,7 +447,7 @@ impl<'a> Storage<'a> {
             .get(&DataKey::Admin.as_symbol(self.env))
     }
 
-    fn get_payments_map(&self) -> Map<soroban_sdk::String, PaymentRecord> {
+    pub fn get_payments_map(&self) -> Map<soroban_sdk::String, PaymentRecord> {
         self.env.storage().instance()
             .get(&DataKey::Payments.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
@@ -448,5 +457,291 @@ impl<'a> Storage<'a> {
         self.env.storage().instance()
             .get(&DataKey::Refunds.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
+    }
+
+    // ===== Payment History Query & Management =====
+
+    /// Get merchant payment indices map
+    fn get_merchant_payment_indices_map(&self) -> Map<Address, Vec<String>> {
+        self.env.storage().instance()
+            .get(&DataKey::MerchantPaymentIndices.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env))
+    }
+
+    /// Get payer payment indices map
+    fn get_payer_payment_indices_map(&self) -> Map<Address, Vec<String>> {
+        self.env.storage().instance()
+            .get(&DataKey::PayerPaymentIndices.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env))
+    }
+
+    /// Add order_id to merchant payment index
+    pub fn save_merchant_payment_index(&self, merchant: &Address, order_id: &String) {
+        let mut indices = self.get_merchant_payment_indices_map();
+        let mut order_ids = indices.get(merchant.clone())
+            .unwrap_or_else(|| Vec::new(self.env));
+        order_ids.push_back(order_id.clone());
+        indices.set(merchant.clone(), order_ids);
+        self.env.storage().instance().set(
+            &DataKey::MerchantPaymentIndices.as_symbol(self.env),
+            &indices,
+        );
+    }
+
+    /// Add order_id to payer payment index
+    pub fn save_payer_payment_index(&self, payer: &Address, order_id: &String) {
+        let mut indices = self.get_payer_payment_indices_map();
+        let mut order_ids = indices.get(payer.clone())
+            .unwrap_or_else(|| Vec::new(self.env));
+        order_ids.push_back(order_id.clone());
+        indices.set(payer.clone(), order_ids);
+        self.env.storage().instance().set(
+            &DataKey::PayerPaymentIndices.as_symbol(self.env),
+            &indices,
+        );
+    }
+
+    /// Get all order_ids for a merchant
+    pub fn get_merchant_payment_indices(&self, merchant: &Address) -> Vec<String> {
+        let indices = self.get_merchant_payment_indices_map();
+        indices.get(merchant.clone())
+            .unwrap_or_else(|| Vec::new(self.env))
+    }
+
+    /// Get all order_ids for a payer
+    pub fn get_payer_payment_indices(&self, payer: &Address) -> Vec<String> {
+        let indices = self.get_payer_payment_indices_map();
+        indices.get(payer.clone())
+            .unwrap_or_else(|| Vec::new(self.env))
+    }
+
+    /// Remove order_id from merchant payment index
+    pub fn remove_merchant_payment_index(&self, merchant: &Address, order_id: &String) {
+        let mut indices = self.get_merchant_payment_indices_map();
+        if let Some(order_ids) = indices.get(merchant.clone()) {
+            let mut new_order_ids = Vec::new(self.env);
+            for id in order_ids.iter() {
+                if id != *order_id {
+                    new_order_ids.push_back(id);
+                }
+            }
+            if new_order_ids.len() > 0 {
+                indices.set(merchant.clone(), new_order_ids);
+            } else {
+                indices.remove(merchant.clone());
+            }
+            self.env.storage().instance().set(
+                &DataKey::MerchantPaymentIndices.as_symbol(self.env),
+                &indices,
+            );
+        }
+    }
+
+    /// Remove order_id from payer payment index
+    pub fn remove_payer_payment_index(&self, payer: &Address, order_id: &String) {
+        let mut indices = self.get_payer_payment_indices_map();
+        if let Some(order_ids) = indices.get(payer.clone()) {
+            let mut new_order_ids = Vec::new(self.env);
+            for id in order_ids.iter() {
+                if id != *order_id {
+                    new_order_ids.push_back(id);
+                }
+            }
+            if new_order_ids.len() > 0 {
+                indices.set(payer.clone(), new_order_ids);
+            } else {
+                indices.remove(payer.clone());
+            }
+            self.env.storage().instance().set(
+                &DataKey::PayerPaymentIndices.as_symbol(self.env),
+                &indices,
+            );
+        }
+    }
+
+    /// Query payments with filters
+    pub fn query_payments_with_filters(
+        &self,
+        order_ids: &Vec<String>,
+        filter: &PaymentQueryFilter,
+    ) -> Vec<PaymentRecord> {
+        let payments = self.get_payments_map();
+        let mut results = Vec::new(self.env);
+
+        for order_id in order_ids.iter() {
+            if let Some(record) = payments.get(order_id.clone()) {
+                // Apply date filter
+                if let Some(date_start) = filter.date_start {
+                    if record.paid_at < date_start {
+                        continue;
+                    }
+                }
+                if let Some(date_end) = filter.date_end {
+                    if record.paid_at > date_end {
+                        continue;
+                    }
+                }
+
+                // Apply amount filter
+                if let Some(amount_min) = filter.amount_min {
+                    if record.amount < amount_min {
+                        continue;
+                    }
+                }
+                if let Some(amount_max) = filter.amount_max {
+                    if record.amount > amount_max {
+                        continue;
+                    }
+                }
+
+                // Apply token filter
+                if let Some(ref token) = filter.token {
+                    if record.token != *token {
+                        continue;
+                    }
+                }
+
+                // Apply status filter
+                if filter.status != crate::types::PaymentRecordStatus::Any {
+                    let record_status = record.get_status();
+                    if record_status != filter.status {
+                        continue;
+                    }
+                }
+
+                results.push_back(record);
+            }
+        }
+
+        results
+    }
+
+    /// Sort payments by field and order
+    pub fn sort_payments(
+        &self,
+        records: Vec<PaymentRecord>,
+        field: &SortField,
+        order: &SortOrder,
+    ) -> Vec<PaymentRecord> {
+        // Build sorted Vec by comparing and inserting in order
+        let mut sorted: Vec<PaymentRecord> = Vec::new(self.env);
+        
+        for record in records.iter() {
+            let mut inserted = false;
+            let mut new_sorted = Vec::new(self.env);
+            
+            // Find insertion point
+            for sorted_record in sorted.iter() {
+                let should_insert_before = match field {
+                    SortField::Date => {
+                        let cmp = sorted_record.paid_at.cmp(&record.paid_at);
+                        match order {
+                            SortOrder::Ascending => cmp == core::cmp::Ordering::Greater,
+                            SortOrder::Descending => cmp == core::cmp::Ordering::Less,
+                        }
+                    }
+                    SortField::Amount => {
+                        let cmp = sorted_record.amount.cmp(&record.amount);
+                        match order {
+                            SortOrder::Ascending => cmp == core::cmp::Ordering::Greater,
+                            SortOrder::Descending => cmp == core::cmp::Ordering::Less,
+                        }
+                    }
+                };
+                
+                if should_insert_before && !inserted {
+                    new_sorted.push_back(record.clone());
+                    inserted = true;
+                }
+                new_sorted.push_back(sorted_record.clone());
+            }
+            
+            if !inserted {
+                new_sorted.push_back(record.clone());
+            }
+            
+            sorted = new_sorted;
+        }
+
+        sorted
+    }
+
+    /// Paginate payments with cursor
+    pub fn paginate_payments(
+        &self,
+        records: Vec<PaymentRecord>,
+        cursor: Option<String>,
+        limit: u32,
+    ) -> (Vec<PaymentRecord>, Option<String>) {
+        let mut start_idx = 0u32;
+        
+        // Find cursor position if provided
+        if let Some(ref cursor_id) = cursor {
+            for (idx, record) in records.iter().enumerate() {
+                if record.order_id == *cursor_id {
+                    start_idx = (idx + 1) as u32;
+                    break;
+                }
+            }
+        }
+
+        let mut paginated = Vec::new(self.env);
+        let mut next_cursor: Option<String> = None;
+        let max_idx = core::cmp::min(start_idx + limit, records.len() as u32);
+
+        for i in start_idx..max_idx {
+            if let Some(record) = records.get(i) {
+                paginated.push_back(record.clone());
+            }
+        }
+
+        // Set next cursor if there are more results
+        if max_idx < records.len() as u32 {
+            if paginated.len() > 0 {
+                if let Some(last_record) = paginated.get((paginated.len() - 1) as u32) {
+                    next_cursor = Some(last_record.order_id.clone());
+                }
+            }
+        }
+
+        (paginated, next_cursor)
+    }
+
+    /// Set payment cleanup period (in seconds)
+    pub fn set_cleanup_period(&self, period: u64) {
+        self.env.storage().instance().set(
+            &DataKey::PaymentCleanupPeriod.as_symbol(self.env),
+            &period,
+        );
+    }
+
+    /// Get payment cleanup period (in seconds)
+    pub fn get_cleanup_period(&self) -> u64 {
+        self.env.storage().instance()
+            .get(&DataKey::PaymentCleanupPeriod.as_symbol(self.env))
+            .unwrap_or(365 * 24 * 60 * 60) // Default: 365 days
+    }
+
+    /// Get payment archive map
+    fn get_payment_archive_map(&self) -> Map<String, PaymentRecord> {
+        self.env.storage().instance()
+            .get(&DataKey::PaymentArchive.as_symbol(self.env))
+            .unwrap_or_else(|| Map::new(self.env))
+    }
+
+    /// Archive a payment record
+    pub fn archive_payment_record(&self, record: &PaymentRecord) {
+        let mut archive = self.get_payment_archive_map();
+        archive.set(record.order_id.clone(), record.clone());
+        self.env.storage().instance().set(
+            &DataKey::PaymentArchive.as_symbol(self.env),
+            &archive,
+        );
+    }
+
+    /// Get archived payment record
+    pub fn get_archived_payment(&self, order_id: &String) -> Option<PaymentRecord> {
+        let archive = self.get_payment_archive_map();
+        archive.get(order_id.clone())
     }
 }
