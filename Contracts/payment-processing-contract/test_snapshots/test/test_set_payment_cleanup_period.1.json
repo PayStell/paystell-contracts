@@ -12,26 +12,10 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "register_merchant",
+              "function_name": "set_admin",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "string": "Test Merchant"
-                },
-                {
-                  "string": "A test merchant for unit tests"
-                },
-                {
-                  "string": "test@merchant.com"
-                },
-                {
-                  "vec": [
-                    {
-                      "symbol": "Retail"
-                    }
-                  ]
                 }
               ]
             }
@@ -40,7 +24,6 @@
         }
       ]
     ],
-    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
@@ -48,10 +31,13 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "deactivate_merchant",
+              "function_name": "set_payment_cleanup_period",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "u64": 7776000
                 }
               ]
             }
@@ -60,7 +46,6 @@
         }
       ]
     ],
-    [],
     [
       [
         "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
@@ -68,7 +53,7 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "activate_merchant",
+              "function_name": "cleanup_expired_payments",
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -79,8 +64,7 @@
           "sub_invocations": []
         }
       ]
-    ],
-    []
+    ]
   ],
   "ledger": {
     "protocol_version": 22,
@@ -117,107 +101,18 @@
                     "storage": [
                       {
                         "key": {
-                          "symbol": "merchants"
+                          "symbol": "admin"
                         },
                         "val": {
-                          "map": [
-                            {
-                              "key": {
-                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                              },
-                              "val": {
-                                "map": [
-                                  {
-                                    "key": {
-                                      "symbol": "active"
-                                    },
-                                    "val": {
-                                      "bool": true
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "category"
-                                    },
-                                    "val": {
-                                      "vec": [
-                                        {
-                                          "symbol": "Retail"
-                                        }
-                                      ]
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "contact_info"
-                                    },
-                                    "val": {
-                                      "string": "test@merchant.com"
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "description"
-                                    },
-                                    "val": {
-                                      "string": "A test merchant for unit tests"
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "last_activity_timestamp"
-                                    },
-                                    "val": {
-                                      "u64": 0
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "max_transaction_limit"
-                                    },
-                                    "val": {
-                                      "i128": {
-                                        "hi": 0,
-                                        "lo": 1000000000000
-                                      }
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "name"
-                                    },
-                                    "val": {
-                                      "string": "Test Merchant"
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "registration_timestamp"
-                                    },
-                                    "val": {
-                                      "u64": 0
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "supported_tokens"
-                                    },
-                                    "val": {
-                                      "vec": []
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "wallet_address"
-                                    },
-                                    "val": {
-                                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                                    }
-                                  }
-                                ]
-                              }
-                            }
-                          ]
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "pay_cleanup_period"
+                        },
+                        "val": {
+                          "u64": 7776000
                         }
                       }
                     ]
@@ -352,5 +247,26 @@
       ]
     ]
   },
-  "events": []
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "string": "payments_cleaned_up"
+              }
+            ],
+            "data": {
+              "u32": 0
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
 }
