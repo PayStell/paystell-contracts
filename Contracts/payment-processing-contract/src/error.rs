@@ -65,12 +65,22 @@ impl fmt::Display for PaymentError {
             PaymentError::InvalidToken => write!(f, "Token not supported by merchant"),
 
             // Merchant profile validation errors
-            PaymentError::InvalidName => write!(f, "Invalid merchant name (must be 1-100 characters)"),
-            PaymentError::InvalidDescription => write!(f, "Invalid description (max 500 characters)"),
-            PaymentError::InvalidContactInfo => write!(f, "Invalid contact info (max 200 characters)"),
+            PaymentError::InvalidName => {
+                write!(f, "Invalid merchant name (must be 1-100 characters)")
+            }
+            PaymentError::InvalidDescription => {
+                write!(f, "Invalid description (max 500 characters)")
+            }
+            PaymentError::InvalidContactInfo => {
+                write!(f, "Invalid contact info (max 200 characters)")
+            }
             PaymentError::MerchantAlreadyExists => write!(f, "Merchant already registered"),
-            PaymentError::TransactionLimitExceeded => write!(f, "Transaction amount exceeds merchant limit"),
-            PaymentError::InvalidTransactionLimit => write!(f, "Invalid transaction limit (must be positive)"),
+            PaymentError::TransactionLimitExceeded => {
+                write!(f, "Transaction amount exceeds merchant limit")
+            }
+            PaymentError::InvalidTransactionLimit => {
+                write!(f, "Invalid transaction limit (must be positive)")
+            }
             PaymentError::MerchantInactive => write!(f, "Merchant account is inactive"),
 
             // Admin / contract management
@@ -103,4 +113,3 @@ impl fmt::Display for PaymentError {
         }
     }
 }
-

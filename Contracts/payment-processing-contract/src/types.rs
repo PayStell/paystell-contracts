@@ -1,7 +1,4 @@
-use soroban_sdk::{
-    contracttype,
-    Address, String, Vec, Map, Symbol,
-};
+use soroban_sdk::{contracttype, Address, Map, String, Symbol, Vec};
 
 /// Merchant category enumeration
 #[contracttype]
@@ -58,7 +55,6 @@ impl Merchant {
     pub fn remove_token(&mut self, token: Address) -> bool {
         let mut found = false;
         let mut new_tokens = Vec::new(&self.supported_tokens.env());
-        
         for existing_token in self.supported_tokens.iter() {
             if existing_token != token {
                 new_tokens.push_back(existing_token);
@@ -66,7 +62,6 @@ impl Merchant {
                 found = true;
             }
         }
-        
         if found {
             self.supported_tokens = new_tokens;
         }
@@ -162,8 +157,9 @@ impl NonceTracker {
         let bitmap_index = nonce / 32;
         let bit_position = nonce % 32;
         let current_word = self.nonce_bitmap.get(bitmap_index).unwrap_or(0);
-        self.nonce_bitmap.set(bitmap_index, current_word | (1 << bit_position));
-        
+        self.nonce_bitmap
+            .set(bitmap_index, current_word | (1 << bit_position));
+
         if nonce > self.highest_nonce {
             self.highest_nonce = nonce;
         }
@@ -226,7 +222,7 @@ pub struct MultiSigPaymentRecord {
     pub status: PaymentStatus,
     pub executed_at: u64,
     pub executor: Option<Address>, // Who executed the payment
-    pub reason: Option<String>, // Cancellation reason if applicable
+    pub reason: Option<String>,    // Cancellation reason if applicable
 }
 
 // Events
@@ -258,6 +254,42 @@ pub struct MerchantDeactivatedEvent {
 pub struct LimitsUpdatedEvent {
     pub merchant: Address,
     pub max_transaction_limit: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct MultiSigPaymentInitiatedEvent {
+    pub payment_id: u128,
+    pub amount: i128,
+    pub recipient: Address,
+    pub threshold: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct MultiSigSignatureAddedEvent {
+    pub payment_id: u128,
+    pub signer: Address,
+    pub current_signatures: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct MultiSigPaymentExecutedEvent {
+    pub payment_id: u128,
+    pub executor: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone)]
+pub struct MultiSigPaymentCancelledEvent {
+    pub payment_id: u128,
+    pub canceller: Address,
+    pub reason: String,
     pub timestamp: u64,
 }
 
@@ -300,4 +332,8 @@ pub fn merchant_deactivated_topic(env: &soroban_sdk::Env) -> Symbol {
 
 pub fn limits_updated_topic(env: &soroban_sdk::Env) -> Symbol {
     Symbol::new(env, "limits_upd")
+}
+
+pub fn multisig_topic(env: &soroban_sdk::Env) -> Symbol {
+    Symbol::new(env, "multisig_op")
 }

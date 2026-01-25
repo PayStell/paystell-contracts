@@ -1,10 +1,11 @@
-use soroban_sdk::{
-    contracttype, log, Address, Env, Map, Symbol,
-};
 use crate::{
-    types::{Merchant, NonceTracker, Fee, MultiSigPayment, PaymentRecord, RefundRequest, MultiSigPaymentRecord},
     error::PaymentError,
+    types::{
+        Fee, Merchant, MultiSigPayment, MultiSigPaymentRecord, NonceTracker, PaymentRecord,
+        RefundRequest,
+    },
 };
+use soroban_sdk::{contracttype, log, Address, Env, Map, Symbol};
 
 #[contracttype]
 #[derive(Clone)]
@@ -150,11 +151,12 @@ impl<'a> Storage<'a> {
 
     /// Get nonce trackers map
     fn get_nonce_trackers_map(&self) -> Map<Address, NonceTracker> {
-        self.env.storage().instance()
+        self.env
+            .storage()
+            .instance()
             .get(&DataKey::NonceTrackers.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
     }
-
 
     /// Check if nonce is used with bitmap optimization
     pub fn is_nonce_used(&self, merchant: &Address, nonce: u32) -> bool {
@@ -169,51 +171,53 @@ impl<'a> Storage<'a> {
     /// Mark nonce as used with bitmap optimization
     pub fn mark_nonce_used(&self, merchant: &Address, nonce: u32) {
         let mut trackers = self.get_nonce_trackers_map();
-        let mut tracker = trackers.get(merchant.clone())
+        let mut tracker = trackers
+            .get(merchant.clone())
             .unwrap_or_else(|| NonceTracker::new(self.env));
-        
+
         tracker.mark_nonce_used(nonce);
         trackers.set(merchant.clone(), tracker);
-        
+
         // Persist to storage
-        self.env.storage().instance().set(
-            &DataKey::NonceTrackers.as_symbol(self.env),
-            &trackers,
-        );
+        self.env
+            .storage()
+            .instance()
+            .set(&DataKey::NonceTrackers.as_symbol(self.env), &trackers);
     }
 
     /// Batch save multiple merchants (gas optimization)
     pub fn batch_save_merchants(&self, merchants_data: &[(Address, Merchant)]) {
         let mut merchants = self.get_merchants_map();
-        
+
         for (address, merchant) in merchants_data {
             merchants.set(address.clone(), merchant.clone());
         }
-        
+
         // Single storage write for all merchants
-        self.env.storage().instance().set(
-            &DataKey::Merchants.as_symbol(self.env),
-            &merchants,
-        );
+        self.env
+            .storage()
+            .instance()
+            .set(&DataKey::Merchants.as_symbol(self.env), &merchants);
     }
 
     /// Batch mark multiple nonces as used (gas optimization)
     pub fn batch_mark_nonces_used(&self, merchant: &Address, nonces: &[u32]) {
         let mut trackers = self.get_nonce_trackers_map();
-        let mut tracker = trackers.get(merchant.clone())
+        let mut tracker = trackers
+            .get(merchant.clone())
             .unwrap_or_else(|| NonceTracker::new(self.env));
-        
+
         for &nonce in nonces {
             tracker.mark_nonce_used(nonce);
         }
-        
+
         trackers.set(merchant.clone(), tracker);
-        
+
         // Single storage write
-        self.env.storage().instance().set(
-            &DataKey::NonceTrackers.as_symbol(self.env),
-            &trackers,
-        );
+        self.env
+            .storage()
+            .instance()
+            .set(&DataKey::NonceTrackers.as_symbol(self.env), &trackers);
     }
 
     pub fn merchant_exists(&self, address: &Address) -> bool {
@@ -243,12 +247,11 @@ impl<'a> Storage<'a> {
             .set(&DataKey::MultiSigPayments.as_symbol(self.env), &payments);
     }
 
-    pub fn get_multisig_payment(
-        &self,
-        payment_id: u128,
-    ) -> Result<MultiSigPayment, PaymentError> {
+    pub fn get_multisig_payment(&self, payment_id: u128) -> Result<MultiSigPayment, PaymentError> {
         let payments = self.get_multisig_payments_map();
-        payments.get(payment_id).ok_or(PaymentError::PaymentNotFound)
+        payments
+            .get(payment_id)
+            .ok_or(PaymentError::PaymentNotFound)
     }
 
     pub fn remove_multisig_payment(&self, payment_id: u128) {
@@ -294,48 +297,58 @@ impl<'a> Storage<'a> {
     pub fn save_payment(&self, record: &PaymentRecord) {
         let mut payments = self.get_payments_map();
         payments.set(record.order_id.clone(), record.clone());
-        self.env.storage().instance().set(
-            &DataKey::Payments.as_symbol(self.env),
-            &payments,
-        );
+        self.env
+            .storage()
+            .instance()
+            .set(&DataKey::Payments.as_symbol(self.env), &payments);
     }
 
-    pub fn get_payment(&self, order_id: &soroban_sdk::String) -> Result<PaymentRecord, PaymentError> {
+    pub fn get_payment(
+        &self,
+        order_id: &soroban_sdk::String,
+    ) -> Result<PaymentRecord, PaymentError> {
         let payments = self.get_payments_map();
-        payments.get(order_id.clone()).ok_or(PaymentError::PaymentNotFound)
+        payments
+            .get(order_id.clone())
+            .ok_or(PaymentError::PaymentNotFound)
     }
 
     pub fn update_payment(&self, record: &PaymentRecord) {
         let mut payments = self.get_payments_map();
         payments.set(record.order_id.clone(), record.clone());
-        self.env.storage().instance().set(
-            &DataKey::Payments.as_symbol(self.env),
-            &payments,
-        );
+        self.env
+            .storage()
+            .instance()
+            .set(&DataKey::Payments.as_symbol(self.env), &payments);
     }
 
     // ===== Refund requests management =====
     pub fn save_refund(&self, request: &RefundRequest) {
         let mut refunds = self.get_refunds_map();
         refunds.set(request.refund_id.clone(), request.clone());
-        self.env.storage().instance().set(
-            &DataKey::Refunds.as_symbol(self.env),
-            &refunds,
-        );
+        self.env
+            .storage()
+            .instance()
+            .set(&DataKey::Refunds.as_symbol(self.env), &refunds);
     }
 
-    pub fn get_refund(&self, refund_id: &soroban_sdk::String) -> Result<RefundRequest, PaymentError> {
+    pub fn get_refund(
+        &self,
+        refund_id: &soroban_sdk::String,
+    ) -> Result<RefundRequest, PaymentError> {
         let refunds = self.get_refunds_map();
-        refunds.get(refund_id.clone()).ok_or(PaymentError::RefundNotFound)
+        refunds
+            .get(refund_id.clone())
+            .ok_or(PaymentError::RefundNotFound)
     }
 
     pub fn update_refund(&self, request: &RefundRequest) {
         let mut refunds = self.get_refunds_map();
         refunds.set(request.refund_id.clone(), request.clone());
-        self.env.storage().instance().set(
-            &DataKey::Refunds.as_symbol(self.env),
-            &refunds,
-        );
+        self.env
+            .storage()
+            .instance()
+            .set(&DataKey::Refunds.as_symbol(self.env), &refunds);
     }
 
     fn get_multisig_payments_map(&self) -> Map<u128, MultiSigPayment> {
@@ -375,11 +388,7 @@ impl<'a> Storage<'a> {
         Ok(())
     }
 
-    pub fn set_fee_info(
-        &self,
-        fee: &Fee,
-        admin: &Address,
-    ) -> Result<(), PaymentError> {
+    pub fn set_fee_info(&self, fee: &Fee, admin: &Address) -> Result<(), PaymentError> {
         self.require_admin(admin)?;
         if fee.fee_rate > 10 {
             return Err(PaymentError::InvalidFeeRate);
@@ -439,13 +448,17 @@ impl<'a> Storage<'a> {
     }
 
     fn get_payments_map(&self) -> Map<soroban_sdk::String, PaymentRecord> {
-        self.env.storage().instance()
+        self.env
+            .storage()
+            .instance()
             .get(&DataKey::Payments.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
     }
 
     fn get_refunds_map(&self) -> Map<soroban_sdk::String, RefundRequest> {
-        self.env.storage().instance()
+        self.env
+            .storage()
+            .instance()
             .get(&DataKey::Refunds.as_symbol(self.env))
             .unwrap_or_else(|| Map::new(self.env))
     }

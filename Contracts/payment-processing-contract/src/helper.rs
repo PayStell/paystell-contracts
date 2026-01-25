@@ -1,5 +1,5 @@
-use soroban_sdk::String;
 use crate::error::PaymentError;
+use soroban_sdk::String;
 
 // Validation constants
 pub const MIN_NAME_LENGTH: u32 = 1;
