@@ -21,4 +21,4 @@ pub enum ProxyError {
     SameImplementation = 15,
     MetadataTooLarge = 16,
     InvalidImplementation = 17,
-}
+    RollbackFailed = 18,}
