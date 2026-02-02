@@ -1,56 +1,21 @@
 {
   "generators": {
-    "address": 5,
+    "address": 7,
     "nonce": 0
   },
   "auth": [
     [],
     [
       [
-        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGO6V",
         {
           "function": {
             "contract_fn": {
-              "contract_address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN",
+              "contract_address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF",
               "function_name": "set_admin",
               "args": [
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "register_merchant",
-              "args": [
-                {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "string": "Test Merchant"
-                },
-                {
-                  "string": "A test merchant for unit tests"
-                },
-                {
-                  "string": "test@merchant.com"
-                },
-                {
-                  "vec": [
-                    {
-                      "symbol": "Retail"
-                    }
-                  ]
                 }
               ]
             }
@@ -59,6 +24,7 @@
         }
       ]
     ],
+    [],
     []
   ],
   "ledger": {
@@ -74,7 +40,7 @@
       [
         {
           "account": {
-            "account_id": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+            "account_id": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGO6V"
           }
         },
         [
@@ -82,7 +48,7 @@
             "last_modified_ledger_seq": 0,
             "data": {
               "account": {
-                "account_id": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+                "account_id": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGO6V",
                 "balance": 0,
                 "seq_num": 0,
                 "num_sub_entries": 0,
@@ -102,7 +68,7 @@
       [
         {
           "contract_data": {
-            "contract": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+            "contract": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGO6V",
             "key": {
               "ledger_key_nonce": {
                 "nonce": 801925984706572462
@@ -117,7 +83,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF",
+                "contract": "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGO6V",
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": 801925984706572462
@@ -157,107 +123,140 @@
                     "storage": [
                       {
                         "key": {
-                          "symbol": "merchants"
+                          "symbol": "multisig_payments"
                         },
                         "val": {
                           "map": [
                             {
                               "key": {
-                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                "u128": {
+                                  "hi": 0,
+                                  "lo": 1
+                                }
                               },
                               "val": {
                                 "map": [
                                   {
                                     "key": {
-                                      "symbol": "active"
+                                      "symbol": "amount"
                                     },
                                     "val": {
-                                      "bool": true
+                                      "i128": {
+                                        "hi": 0,
+                                        "lo": 1000
+                                      }
                                     }
                                   },
                                   {
                                     "key": {
-                                      "symbol": "category"
+                                      "symbol": "created_at"
+                                    },
+                                    "val": {
+                                      "u64": 0
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "expiry"
+                                    },
+                                    "val": {
+                                      "u64": 3600
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "payment_id"
+                                    },
+                                    "val": {
+                                      "u128": {
+                                        "hi": 0,
+                                        "lo": 1
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "reason"
+                                    },
+                                    "val": "void"
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "recipient"
+                                    },
+                                    "val": {
+                                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "signatures"
+                                    },
+                                    "val": {
+                                      "map": []
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "signers"
                                     },
                                     "val": {
                                       "vec": [
                                         {
-                                          "symbol": "Retail"
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                                        },
+                                        {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                                        },
+                                        {
+                                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
                                         }
                                       ]
                                     }
                                   },
                                   {
                                     "key": {
-                                      "symbol": "contact_info"
+                                      "symbol": "status"
                                     },
                                     "val": {
-                                      "string": "test@merchant.com"
+                                      "vec": [
+                                        {
+                                          "symbol": "Pending"
+                                        }
+                                      ]
                                     }
                                   },
                                   {
                                     "key": {
-                                      "symbol": "description"
+                                      "symbol": "threshold"
                                     },
                                     "val": {
-                                      "string": "A test merchant for unit tests"
+                                      "u32": 2
                                     }
                                   },
                                   {
                                     "key": {
-                                      "symbol": "last_activity_timestamp"
+                                      "symbol": "token"
                                     },
                                     "val": {
-                                      "u64": 0
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "max_transaction_limit"
-                                    },
-                                    "val": {
-                                      "i128": {
-                                        "hi": 0,
-                                        "lo": 1000000000000
-                                      }
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "name"
-                                    },
-                                    "val": {
-                                      "string": "Test Merchant"
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "registration_timestamp"
-                                    },
-                                    "val": {
-                                      "u64": 0
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "supported_tokens"
-                                    },
-                                    "val": {
-                                      "vec": []
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "wallet_address"
-                                    },
-                                    "val": {
-                                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                      "address": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF"
                                     }
                                   }
                                 ]
                               }
                             }
                           ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "payment_counter"
+                        },
+                        "val": {
+                          "u128": {
+                            "hi": 0,
+                            "lo": 1
+                          }
                         }
                       }
                     ]
@@ -273,40 +272,7 @@
       [
         {
           "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-            "key": {
-              "ledger_key_nonce": {
-                "nonce": 5541220902715666415
-              }
-            },
-            "durability": "temporary"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-                "key": {
-                  "ledger_key_nonce": {
-                    "nonce": 5541220902715666415
-                  }
-                },
-                "durability": "temporary",
-                "val": "void"
-              }
-            },
-            "ext": "v0"
-          },
-          6311999
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN",
+            "contract": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF",
             "key": "ledger_key_contract_instance",
             "durability": "persistent"
           }
@@ -317,7 +283,7 @@
             "data": {
               "contract_data": {
                 "ext": "v0",
-                "contract": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN",
+                "contract": "CBUSYNQKASUYFWYC3M2GUEDMX4AIVWPALDBYJPNK6554BREHTGZ2IUNF",
                 "key": "ledger_key_contract_instance",
                 "durability": "persistent",
                 "val": {
@@ -343,7 +309,7 @@
                                 "symbol": "name"
                               },
                               "val": {
-                                "string": "aaa:GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJXFF"
+                                "string": "aaa:GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGO6V"
                               }
                             },
                             {
@@ -366,7 +332,7 @@
                           ]
                         },
                         "val": {
-                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                          "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                         }
                       },
                       {
@@ -397,7 +363,7 @@
                                     "symbol": "issuer"
                                   },
                                   "val": {
-                                    "bytes": "0000000000000000000000000000000000000000000000000000000000000004"
+                                    "bytes": "0000000000000000000000000000000000000000000000000000000000000003"
                                   }
                                 }
                               ]

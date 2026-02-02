@@ -301,3 +301,94 @@ pub fn merchant_deactivated_topic(env: &soroban_sdk::Env) -> Symbol {
 pub fn limits_updated_topic(env: &soroban_sdk::Env) -> Symbol {
     Symbol::new(env, "limits_upd")
 }
+
+// Payment History Query Types
+
+/// Derived payment status based on refunded_amount
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum PaymentRecordStatus {
+    Any,              // No filter (match all statuses)
+    Completed,        // refunded_amount == 0
+    PartiallyRefunded, // 0 < refunded_amount < amount
+    FullyRefunded,    // refunded_amount == amount
+}
+
+impl PaymentRecord {
+    /// Derive status from refunded_amount
+    pub fn get_status(&self) -> PaymentRecordStatus {
+        if self.refunded_amount == 0 {
+            PaymentRecordStatus::Completed
+        } else if self.refunded_amount >= self.amount {
+            PaymentRecordStatus::FullyRefunded
+        } else {
+            PaymentRecordStatus::PartiallyRefunded
+        }
+    }
+}
+
+/// Sort order for query results
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum SortOrder {
+    Ascending,
+    Descending,
+}
+
+/// Field to sort by
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum SortField {
+    Date,   // Sort by paid_at
+    Amount, // Sort by amount
+}
+
+/// Filter criteria for payment queries
+#[contracttype]
+#[derive(Clone)]
+pub struct PaymentQueryFilter {
+    /// Optional date range: start timestamp (inclusive)
+    pub date_start: Option<u64>,
+    /// Optional date range: end timestamp (inclusive)
+    pub date_end: Option<u64>,
+    /// Optional amount range: minimum amount (inclusive)
+    pub amount_min: Option<i128>,
+    /// Optional amount range: maximum amount (inclusive)
+    pub amount_max: Option<i128>,
+    /// Optional token filter
+    pub token: Option<Address>,
+    /// Status filter (PaymentRecordStatus::Any means no filter)
+    pub status: PaymentRecordStatus,
+}
+
+/// Paginated query result
+#[contracttype]
+#[derive(Clone)]
+pub struct PaymentQueryResult {
+    /// Payment records matching the query
+    pub records: Vec<PaymentRecord>,
+    /// Cursor for next page (None if no more results)
+    pub next_cursor: Option<String>,
+    /// Total count of records matching filters (may be approximate for large datasets)
+    pub total_count: u32,
+}
+
+/// Aggregate payment statistics
+#[contracttype]
+#[derive(Clone)]
+pub struct PaymentStats {
+    /// Total number of payments
+    pub total_payments: u32,
+    /// Total amount of all payments
+    pub total_amount: i128,
+    /// Average payment amount
+    pub average_amount: i128,
+    /// Total refunded amount
+    pub total_refunded: i128,
+    /// Number of completed payments (no refunds)
+    pub completed_count: u32,
+    /// Number of partially refunded payments
+    pub partially_refunded_count: u32,
+    /// Number of fully refunded payments
+    pub fully_refunded_count: u32,
+}
