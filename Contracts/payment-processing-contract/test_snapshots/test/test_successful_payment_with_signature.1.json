@@ -426,6 +426,27 @@
                       },
                       {
                         "key": {
+                          "symbol": "merchant_pay_idx"
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "string": "TEST_ORDER_1"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "merchants"
                         },
                         "val": {
@@ -438,10 +459,10 @@
                                 "map": [
                                   {
                                     "key": {
-                                      "symbol": "flags"
+                                      "symbol": "active"
                                     },
                                     "val": {
-                                      "u32": 1
+                                      "bool": true
                                     }
                                   },
                                   {
@@ -512,24 +533,11 @@
                                       "symbol": "supported_tokens"
                                     },
                                     "val": {
-                                      "map": [
+                                      "vec": [
                                         {
-                                          "key": {
-                                            "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
-                                          },
-                                          "val": {
-                                            "bool": true
-                                          }
+                                          "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
                                         }
                                       ]
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "token_count"
-                                    },
-                                    "val": {
-                                      "u32": 1
                                     }
                                   },
                                   {
@@ -539,6 +547,70 @@
                                     "val": {
                                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                                     }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "nonce_trackers"
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                              },
+                              "val": {
+                                "map": [
+                                  {
+                                    "key": {
+                                      "symbol": "highest_nonce"
+                                    },
+                                    "val": {
+                                      "u32": 12345
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "nonce_bitmap"
+                                    },
+                                    "val": {
+                                      "map": [
+                                        {
+                                          "key": {
+                                            "u32": 385
+                                          },
+                                          "val": {
+                                            "u32": 33554432
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "payer_pay_idx"
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "string": "TEST_ORDER_1"
                                   }
                                 ]
                               }
@@ -598,7 +670,7 @@
                                       "symbol": "payer_address"
                                     },
                                     "val": {
-                                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
                                     }
                                   },
                                   {
@@ -617,50 +689,7 @@
                                       "symbol": "token"
                                     },
                                     "val": {
-                                      "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
-                                    }
-                                  }
-                                ]
-                              }
-                            }
-                          ]
-                        }
-                      },
-                      {
-                        "key": {
-                          "symbol": "used_nonces"
-                        },
-                        "val": {
-                          "map": [
-                            {
-                              "key": {
-                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                              },
-                              "val": {
-                                "map": [
-                                  {
-                                    "key": {
-                                      "symbol": "highest_nonce"
-                                    },
-                                    "val": {
-                                      "u32": 12345
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "nonce_bitmap"
-                                    },
-                                    "val": {
-                                      "map": [
-                                        {
-                                          "key": {
-                                            "u32": 385
-                                          },
-                                          "val": {
-                                            "u32": 33554432
-                                          }
-                                        }
-                                      ]
+                                      "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
                                     }
                                   }
                                 ]

@@ -35,6 +35,22 @@
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "string": "Test Merchant"
+                },
+                {
+                  "string": "A test merchant for unit tests"
+                },
+                {
+                  "string": "test@merchant.com"
+                },
+                {
+                  "vec": [
+                    {
+                      "symbol": "Retail"
+                    }
+                  ]
                 }
               ]
             }
@@ -1393,6 +1409,54 @@
                       },
                       {
                         "key": {
+                          "symbol": "merchant_pay_idx"
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
                           "symbol": "merchants"
                         },
                         "val": {
@@ -1405,10 +1469,73 @@
                                 "map": [
                                   {
                                     "key": {
-                                      "symbol": "flags"
+                                      "symbol": "active"
                                     },
                                     "val": {
-                                      "u32": 1
+                                      "bool": true
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "category"
+                                    },
+                                    "val": {
+                                      "vec": [
+                                        {
+                                          "symbol": "Retail"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "contact_info"
+                                    },
+                                    "val": {
+                                      "string": "test@merchant.com"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "description"
+                                    },
+                                    "val": {
+                                      "string": "A test merchant for unit tests"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "last_activity_timestamp"
+                                    },
+                                    "val": {
+                                      "u64": 0
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "max_transaction_limit"
+                                    },
+                                    "val": {
+                                      "i128": {
+                                        "hi": 0,
+                                        "lo": 1000000000000
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "name"
+                                    },
+                                    "val": {
+                                      "string": "Test Merchant"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "registration_timestamp"
+                                    },
+                                    "val": {
+                                      "u64": 0
                                     }
                                   },
                                   {
@@ -1416,24 +1543,11 @@
                                       "symbol": "supported_tokens"
                                     },
                                     "val": {
-                                      "map": [
+                                      "vec": [
                                         {
-                                          "key": {
-                                            "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
-                                          },
-                                          "val": {
-                                            "bool": true
-                                          }
+                                          "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
                                         }
                                       ]
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "token_count"
-                                    },
-                                    "val": {
-                                      "u32": 1
                                     }
                                   },
                                   {
@@ -1485,6 +1599,134 @@
                                           }
                                         }
                                       ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "payer_pay_idx"
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                              },
+                              "val": {
+                                "vec": [
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  },
+                                  {
+                                    "string": "ORDER_TEST"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "payments"
+                        },
+                        "val": {
+                          "map": [
+                            {
+                              "key": {
+                                "string": "ORDER_TEST"
+                              },
+                              "val": {
+                                "map": [
+                                  {
+                                    "key": {
+                                      "symbol": "amount"
+                                    },
+                                    "val": {
+                                      "i128": {
+                                        "hi": 0,
+                                        "lo": 100
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "merchant_address"
+                                    },
+                                    "val": {
+                                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "order_id"
+                                    },
+                                    "val": {
+                                      "string": "ORDER_TEST"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "paid_at"
+                                    },
+                                    "val": {
+                                      "u64": 0
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "payer_address"
+                                    },
+                                    "val": {
+                                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "refunded_amount"
+                                    },
+                                    "val": {
+                                      "i128": {
+                                        "hi": 0,
+                                        "lo": 0
+                                      }
+                                    }
+                                  },
+                                  {
+                                    "key": {
+                                      "symbol": "token"
+                                    },
+                                    "val": {
+                                      "address": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN"
                                     }
                                   }
                                 ]

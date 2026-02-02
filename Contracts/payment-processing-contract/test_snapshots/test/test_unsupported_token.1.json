@@ -169,10 +169,10 @@
                                 "map": [
                                   {
                                     "key": {
-                                      "symbol": "flags"
+                                      "symbol": "active"
                                     },
                                     "val": {
-                                      "u32": 1
+                                      "bool": true
                                     }
                                   },
                                   {
@@ -243,15 +243,7 @@
                                       "symbol": "supported_tokens"
                                     },
                                     "val": {
-                                      "map": []
-                                    }
-                                  },
-                                  {
-                                    "key": {
-                                      "symbol": "token_count"
-                                    },
-                                    "val": {
-                                      "u32": 0
+                                      "vec": []
                                     }
                                   },
                                   {
