@@ -1,34 +1,38 @@
 #![no_std]
 
 mod error;
+mod helper;
 mod storage;
 mod types;
-mod helper;
 
 #[cfg(test)]
 mod test;
 
 use soroban_sdk::{
-    contract, contractimpl, token, Address, Env,
-    Vec, BytesN, Bytes, xdr::ToXdr, Map, log, String, Symbol, panic_with_error,
+    contract, contractimpl, log, panic_with_error, token, xdr::ToXdr, Address, Bytes, BytesN, Env,
+    Map, String, Symbol, Vec,
 };
-// Note: In Soroban, we use the standard Vec from soroban_sdk, not alloc::vec
 
+// Note: In Soroban, we use the standard Vec from soroban_sdk, not alloc::vec
 use crate::{
     error::PaymentError,
-    types::{
-        Merchant, PaymentOrder, BatchMerchantRegistration, BatchTokenAddition, 
-        BatchPayment, GasEstimate, NonceTracker, Fee, MultiSigPayment, PaymentStatus, PaymentRecord,
-        MerchantCategory, ProfileUpdateData, MerchantRegisteredEvent, ProfileUpdatedEvent, 
-        MerchantDeactivatedEvent, LimitsUpdatedEvent, merchant_registered_topic, 
-        profile_updated_topic, merchant_deactivated_topic, limits_updated_topic,
-        RefundRequest, RefundStatus, MultiSigPaymentRecord,
-        PaymentQueryFilter, PaymentQueryResult, PaymentStats, SortField, SortOrder, PaymentRecordStatus
+    helper::{
+        validate_contact_info, validate_cursor, validate_description, validate_name,
+        validate_query_filter, validate_query_limit, validate_transaction_limit,
+        DEFAULT_TRANSACTION_LIMIT,
     },
     storage::Storage,
-    helper::{validate_name, validate_description, validate_contact_info, 
-             validate_transaction_limit, DEFAULT_TRANSACTION_LIMIT,
-             validate_query_limit, validate_query_filter, validate_cursor},
+    types::{
+        limits_updated_topic, merchant_deactivated_topic, merchant_registered_topic,
+        multisig_topic, profile_updated_topic, BatchMerchantRegistration, BatchPayment,
+        BatchTokenAddition, Fee, GasEstimate, LimitsUpdatedEvent, Merchant, MerchantCategory,
+        MerchantDeactivatedEvent, MerchantRegisteredEvent, MultiSigPayment,
+        MultiSigPaymentCancelledEvent, MultiSigPaymentExecutedEvent, MultiSigPaymentInitiatedEvent,
+        MultiSigPaymentRecord, MultiSigSignatureAddedEvent, NonceTracker, PaymentOrder,
+        PaymentQueryFilter, PaymentQueryResult, PaymentRecord, PaymentRecordStatus, PaymentStats,
+        PaymentStatus, ProfileUpdateData, ProfileUpdatedEvent, RefundRequest, RefundStatus,
+        SortField, SortOrder,
+    },
 };
 
 /// Optimized payment-processing-contract trait with gas optimization features
@@ -42,8 +46,9 @@ pub trait PaymentProcessingTrait {
         contact_info: String,
         category: MerchantCategory,
     ) -> Result<(), PaymentError>;
-    
-    fn add_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError>;
+
+    fn add_supported_token(env: Env, merchant: Address, token: Address)
+        -> Result<(), PaymentError>;
 
     // Profile Management Operations
     fn update_merchant_profile(
@@ -51,15 +56,15 @@ pub trait PaymentProcessingTrait {
         merchant: Address,
         update_data: ProfileUpdateData,
     ) -> Result<(), PaymentError>;
-    
+
     fn get_merchant_profile(env: Env, merchant: Address) -> Result<Merchant, PaymentError>;
-    
+
     fn set_merchant_limits(
         env: Env,
         merchant: Address,
         max_transaction_limit: i128,
     ) -> Result<(), PaymentError>;
-    
+
     fn deactivate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError>;
 
     // Fee Management Operations
@@ -71,6 +76,7 @@ pub trait PaymentProcessingTrait {
         fee_token: Address,
     ) -> Result<(), PaymentError>;
     fn get_fee_info(env: Env) -> Result<(u64, Address, Address), PaymentError>;
+
     // Payment Processing Operations
     fn process_payment_with_signature(
         env: Env,
@@ -81,22 +87,39 @@ pub trait PaymentProcessingTrait {
     ) -> Result<(), PaymentError>;
 
     // Batch Operations for Gas Optimization
-    fn batch_register_merchants(env: Env, batch: BatchMerchantRegistration) -> Result<(), PaymentError>;
+    fn batch_register_merchants(
+        env: Env,
+        batch: BatchMerchantRegistration,
+    ) -> Result<(), PaymentError>;
     fn batch_add_tokens(env: Env, batch: BatchTokenAddition) -> Result<(), PaymentError>;
     fn batch_process_payments(env: Env, batch: BatchPayment) -> Result<(), PaymentError>;
 
     // Gas Estimation Functions
-    fn estimate_gas_for_payment(env: Env, order: PaymentOrder) -> Result<GasEstimate, PaymentError>;
-    fn estimate_gas_for_batch_operation(env: Env, operation_type: Symbol, item_count: u32) -> Result<GasEstimate, PaymentError>;
+    fn estimate_gas_for_payment(env: Env, order: PaymentOrder)
+        -> Result<GasEstimate, PaymentError>;
+    fn estimate_gas_for_batch_operation(
+        env: Env,
+        operation_type: Symbol,
+        item_count: u32,
+    ) -> Result<GasEstimate, PaymentError>;
 
     // View Functions (Gas-free reads)
     fn get_merchant_info(env: Env, merchant: Address) -> Result<Merchant, PaymentError>;
     fn get_merchant_token_count(env: Env, merchant: Address) -> Result<u32, PaymentError>;
-    fn is_token_supported(env: Env, merchant: Address, token: Address) -> Result<bool, PaymentError>;
-    fn get_nonce_tracker(env: Env, merchant: Address) -> Result<Option<NonceTracker>, PaymentError>;
+    fn is_token_supported(
+        env: Env,
+        merchant: Address,
+        token: Address,
+    ) -> Result<bool, PaymentError>;
+    fn get_nonce_tracker(env: Env, merchant: Address)
+        -> Result<Option<NonceTracker>, PaymentError>;
 
     // Utility Functions
-    fn remove_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError>;
+    fn remove_supported_token(
+        env: Env,
+        merchant: Address,
+        token: Address,
+    ) -> Result<(), PaymentError>;
     fn activate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError>;
 
     // Multi-signature Payment Operations
@@ -110,11 +133,7 @@ pub trait PaymentProcessingTrait {
         expiry: u64,
     ) -> Result<u128, PaymentError>;
 
-    fn add_signature(
-        env: Env,
-        payment_id: u128,
-        signer: Address,
-    ) -> Result<(), PaymentError>;
+    fn add_signature(env: Env, payment_id: u128, signer: Address) -> Result<(), PaymentError>;
 
     fn execute_multisig_payment(
         env: Env,
@@ -129,10 +148,7 @@ pub trait PaymentProcessingTrait {
         reason: String,
     ) -> Result<(), PaymentError>;
 
-    fn get_multisig_payment(
-        env: Env,
-        payment_id: u128,
-    ) -> Result<MultiSigPayment, PaymentError>;
+    fn get_multisig_payment(env: Env, payment_id: u128) -> Result<MultiSigPayment, PaymentError>;
 
     fn batch_execute_payments(
         env: Env,
@@ -210,10 +226,7 @@ pub trait PaymentProcessingTrait {
         order_id: String,
     ) -> Result<(), PaymentError>;
 
-    fn cleanup_expired_payments(
-        env: Env,
-        admin: Address,
-    ) -> Result<u32, PaymentError>;
+    fn cleanup_expired_payments(env: Env, admin: Address) -> Result<u32, PaymentError>;
 
     fn set_payment_cleanup_period(
         env: Env,
@@ -227,7 +240,6 @@ pub struct PaymentProcessingContract;
 
 #[contractimpl]
 impl PaymentProcessingTrait for PaymentProcessingContract {
-
     fn set_admin(env: Env, admin: Address) -> Result<(), PaymentError> {
         let storage = Storage::new(&env);
 
@@ -285,19 +297,19 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         merchant_address.require_auth();
 
         let storage = Storage::new(&env);
-        
+
         // Check if merchant already exists
         if storage.merchant_exists(&merchant_address) {
             return Err(PaymentError::MerchantAlreadyExists);
         }
-        
+
         // Validate profile data
         validate_name(&name)?;
         validate_description(&description)?;
         validate_contact_info(&contact_info)?;
-        
+
         let current_time = env.ledger().timestamp();
-        
+
         // Create new merchant record
         let merchant = Merchant {
             wallet_address: merchant_address.clone(),
@@ -313,7 +325,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         };
 
         storage.save_merchant(&merchant_address, &merchant);
-        
+
         // Emit registration event
         env.events().publish(
             (merchant_registered_topic(&env),),
@@ -322,9 +334,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
                 name,
                 category,
                 timestamp: current_time,
-            }
+            },
         );
-        
+
         Ok(())
     }
 
@@ -345,10 +357,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         // Add token to supported list
         merchant_data.supported_tokens.push_back(token);
-        
+
         // Update last activity timestamp
         merchant_data.last_activity_timestamp = env.ledger().timestamp();
-        
+
         storage.save_merchant(&merchant, &merchant_data);
         Ok(())
     }
@@ -401,7 +413,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             ProfileUpdatedEvent {
                 merchant,
                 timestamp: current_time,
-            }
+            },
         );
 
         Ok(())
@@ -432,7 +444,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         validate_transaction_limit(max_transaction_limit)?;
 
         merchant_data.max_transaction_limit = max_transaction_limit;
-        
+
         // Update last activity timestamp
         let current_time = env.ledger().timestamp();
         merchant_data.last_activity_timestamp = current_time;
@@ -446,7 +458,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
                 merchant,
                 max_transaction_limit,
                 timestamp: current_time,
-            }
+            },
         );
 
         Ok(())
@@ -461,7 +473,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         // Set merchant as inactive
         merchant_data.active = false;
-        
+
         // Update last activity timestamp
         let current_time = env.ledger().timestamp();
         merchant_data.last_activity_timestamp = current_time;
@@ -474,12 +486,11 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             MerchantDeactivatedEvent {
                 merchant,
                 timestamp: current_time,
-            }
+            },
         );
 
         Ok(())
     }
-
 
     fn process_payment_with_signature(
         env: Env,
@@ -491,6 +502,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         if Self::is_paused(&env) {
             return Err(PaymentError::ContractPaused);
         }
+
         // Verify authorization from payer
         payer.require_auth();
 
@@ -591,14 +603,18 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     }
 
     // Batch Operations for Gas Optimization
-    fn batch_register_merchants(env: Env, batch: BatchMerchantRegistration) -> Result<(), PaymentError> {
+    fn batch_register_merchants(
+        env: Env,
+        batch: BatchMerchantRegistration,
+    ) -> Result<(), PaymentError> {
         if Self::is_paused(&env) {
             return Err(PaymentError::ContractPaused);
         }
         let storage = Storage::new(&env);
-        
+
         for merchant_address in batch.merchants.iter() {
             merchant_address.require_auth();
+
             let merchant = Merchant {
                 wallet_address: merchant_address.clone(),
                 active: true,
@@ -613,9 +629,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             };
             storage.save_merchant(&merchant_address, &merchant);
         }
-        
+
         log!(&env, "merchants_batch_registered", batch.merchants.len());
-        
+
         Ok(())
     }
 
@@ -628,15 +644,20 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         let storage = Storage::new(&env);
         let mut merchant_data = storage.get_merchant(&batch.merchant)?;
-        
+
         for token in batch.tokens.iter() {
             merchant_data.add_token(token.clone());
         }
-        
+
         storage.save_merchant(&batch.merchant, &merchant_data);
-        
-        log!(&env, "tokens_batch_added", batch.merchant, batch.tokens.len());
-        
+
+        log!(
+            &env,
+            "tokens_batch_added",
+            batch.merchant,
+            batch.tokens.len()
+        );
+
         Ok(())
     }
 
@@ -647,14 +668,14 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         batch.payer.require_auth();
 
         let storage = Storage::new(&env);
-        
+
         // Validate signature count matches order count
         if batch.signatures.len() != batch.orders.len() {
             return Err(PaymentError::InvalidSignature);
         }
-        
+
         let mut seen: Map<Address, Vec<u32>> = Map::new(&env);
-        
+
         for order in batch.orders.iter() {
             if env.ledger().timestamp() > order.expiration as u64 {
                 return Err(PaymentError::OrderExpired);
@@ -672,8 +693,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             if storage.is_nonce_used(&order.merchant_address, order.nonce) {
                 return Err(PaymentError::NonceAlreadyUsed);
             }
-            
-            let mut merchant_nonces = seen.get(order.merchant_address.clone()).unwrap_or(Vec::new(&env));
+
+            let mut merchant_nonces = seen
+                .get(order.merchant_address.clone())
+                .unwrap_or(Vec::new(&env));
             if merchant_nonces.iter().any(|n| n == order.nonce) {
                 return Err(PaymentError::NonceAlreadyUsed);
             }
@@ -681,13 +704,17 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             seen.set(order.merchant_address.clone(), merchant_nonces);
         }
 
-        for (_idx, order) in batch.orders.iter().enumerate() {
-            let _message = create_optimized_message(&env, &order);
-            
+        for (idx, order) in batch.orders.iter().enumerate() {
+            let message = create_optimized_message(&env, &order);
+
             #[cfg(not(test))]
             {
-                let sig = batch.signatures.get(_idx as u32).ok_or(PaymentError::InvalidSignature)?;
-                env.crypto().ed25519_verify(&batch.merchant_public_key, &_message, &sig);
+                let sig = batch
+                    .signatures
+                    .get(idx as u32)
+                    .ok_or(PaymentError::InvalidSignature)?;
+                env.crypto()
+                    .ed25519_verify(&batch.merchant_public_key, &message, &sig);
             }
 
             let token_client = token::Client::new(&env, &order.token);
@@ -713,30 +740,38 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
                     i += 1;
                 }
             }
+
             storage.batch_mark_nonces_used(&merchant, &nonces_array[..i]);
         }
-        
-        log!(&env, "payments_batch_processed", batch.payer, batch.orders.len());
-        
+
+        log!(
+            &env,
+            "payments_batch_processed",
+            batch.payer,
+            batch.orders.len()
+        );
         Ok(())
     }
 
     // Gas Estimation Functions
-    fn estimate_gas_for_payment(_env: Env, _order: PaymentOrder) -> Result<GasEstimate, PaymentError> {
+    fn estimate_gas_for_payment(
+        env: Env,
+        order: PaymentOrder,
+    ) -> Result<GasEstimate, PaymentError> {
         // Base gas cost for payment processing
         let base_gas = 50_000u64;
-        
+
         // Additional gas for token transfer
         let transfer_gas = 30_000u64;
-        
+
         // Gas for storage operations (nonce tracking)
         let storage_gas = 10_000u64;
-        
+
         // Gas for signature verification
         let signature_gas = 20_000u64;
-        
+
         let total_estimated = base_gas + transfer_gas + storage_gas + signature_gas;
-        
+
         Ok(GasEstimate {
             base_gas,
             per_item_gas: transfer_gas + storage_gas + signature_gas,
@@ -744,12 +779,16 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         })
     }
 
-    fn estimate_gas_for_batch_operation(env: Env, operation_type: Symbol, item_count: u32) -> Result<GasEstimate, PaymentError> {
+    fn estimate_gas_for_batch_operation(
+        env: Env,
+        operation_type: Symbol,
+        item_count: u32,
+    ) -> Result<GasEstimate, PaymentError> {
         let base_gas = 20_000u64;
         let register_merchants = Symbol::new(&env, "reg_mer");
         let add_tokens = Symbol::new(&env, "add_tok");
         let process_payments = Symbol::new(&env, "proc_pay");
-        
+
         let per_item_gas = if operation_type == register_merchants {
             15_000u64
         } else if operation_type == add_tokens {
@@ -759,9 +798,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         } else {
             10_000u64
         };
-        
+
         let total_estimated = base_gas + (per_item_gas * item_count as u64);
-        
+
         Ok(GasEstimate {
             base_gas,
             per_item_gas,
@@ -781,21 +820,31 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         Ok(merchant_data.supported_tokens.len() as u32)
     }
 
-    fn is_token_supported(env: Env, merchant: Address, token: Address) -> Result<bool, PaymentError> {
+    fn is_token_supported(
+        env: Env,
+        merchant: Address,
+        token: Address,
+    ) -> Result<bool, PaymentError> {
         let storage = Storage::new(&env);
         let merchant_data = storage.get_merchant(&merchant)?;
         Ok(merchant_data.supports_token(&token))
     }
 
-    fn get_nonce_tracker(env: Env, merchant: Address) -> Result<Option<NonceTracker>, PaymentError> {
+    fn get_nonce_tracker(
+        env: Env,
+        merchant: Address,
+    ) -> Result<Option<NonceTracker>, PaymentError> {
         let storage = Storage::new(&env);
         Ok(storage.get_nonce_tracker(&merchant))
     }
 
     // Utility Functions
-    fn remove_supported_token(env: Env, merchant: Address, token: Address) -> Result<(), PaymentError> {
+    fn remove_supported_token(
+        env: Env,
+        merchant: Address,
+        token: Address,
+    ) -> Result<(), PaymentError> {
         merchant.require_auth();
-
         if Self::is_paused(&env) {
             return Err(PaymentError::ContractPaused);
         }
@@ -807,22 +856,16 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             storage.save_merchant(&merchant, &merchant_data);
             log!(&env, "token_removed", merchant, token);
         }
-        
         Ok(())
     }
 
-
     fn activate_merchant(env: Env, merchant: Address) -> Result<(), PaymentError> {
         merchant.require_auth();
-
         let storage = Storage::new(&env);
         let mut merchant_data = storage.get_merchant(&merchant)?;
-
         merchant_data.active = true;
         storage.save_merchant(&merchant, &merchant_data);
-        
         log!(&env, "merchant_activated", merchant);
-        
         Ok(())
     }
 
@@ -840,15 +883,12 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         if amount <= 0 {
             return Err(PaymentError::InvalidAmount);
         }
-
         if signers.is_empty() {
             return Err(PaymentError::EmptySignersList);
         }
-
         if threshold == 0 || threshold > signers.len() {
             return Err(PaymentError::InvalidThreshold);
         }
-
         if expiry <= env.ledger().timestamp() {
             return Err(PaymentError::PaymentExpired);
         }
@@ -864,6 +904,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         let storage = Storage::new(&env);
         let payment_id = storage.get_next_payment_id();
+        let created_at = env.ledger().timestamp();
 
         // Create new multi-sig payment
         let payment = MultiSigPayment {
@@ -876,26 +917,30 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             signatures: Map::new(&env),
             status: PaymentStatus::Pending,
             expiry,
-            created_at: env.ledger().timestamp(),
+            created_at,
             reason: None,
         };
 
         // Save payment
         storage.save_multisig_payment(&payment);
 
-        // Emit event
-        log!(&env, "PaymentInitiated: payment_id={}, amount={}, recipient={}, threshold={}",
-             payment_id, amount, recipient, threshold);
+        // Emit audit event
+        env.events().publish(
+            (multisig_topic(&env), Symbol::new(&env, "initiated")),
+            MultiSigPaymentInitiatedEvent {
+                payment_id,
+                amount,
+                recipient,
+                threshold,
+                timestamp: created_at,
+            },
+        );
 
         Ok(payment_id)
     }
 
-    fn add_signature(
-        env: Env,
-        payment_id: u128,
-        signer: Address,
-    ) -> Result<(), PaymentError> {
-        // Require authorization from the signer
+    fn add_signature(env: Env, payment_id: u128, signer: Address) -> Result<(), PaymentError> {
+        // Require authorization from the signer (Cryptographic validation)
         signer.require_auth();
 
         let storage = Storage::new(&env);
@@ -924,7 +969,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             return Err(PaymentError::NotASigner);
         }
 
-        // Check if already signed
+        // Check if already signed (Deduplication)
         if payment.signatures.contains_key(signer.clone()) {
             return Err(PaymentError::AlreadySigned);
         }
@@ -935,9 +980,16 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         // Save updated payment
         storage.save_multisig_payment(&payment);
 
-        // Emit event
-        log!(&env, "SignatureAdded: payment_id={}, signer={}, signatures_count={}",
-             payment_id, signer, payment.signatures.len());
+        // Emit audit event
+        env.events().publish(
+            (multisig_topic(&env), Symbol::new(&env, "sig_added")),
+            MultiSigSignatureAddedEvent {
+                payment_id,
+                signer,
+                current_signatures: payment.signatures.len(),
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         Ok(())
     }
@@ -955,9 +1007,15 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         // Use the helper function for execution
         Self::execute_single_payment(&env, &storage, payment_id, &executor)?;
 
-        // Emit event
-        log!(&env, "PaymentExecuted: payment_id={}, executor={}",
-             payment_id, executor);
+        // Emit audit event
+        env.events().publish(
+            (multisig_topic(&env), Symbol::new(&env, "executed")),
+            MultiSigPaymentExecutedEvent {
+                payment_id,
+                executor,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
 
         Ok(())
     }
@@ -1000,6 +1058,8 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         payment.status = PaymentStatus::Cancelled;
         payment.reason = Some(reason.clone());
 
+        let cancelled_time = env.ledger().timestamp();
+
         // Archive the cancelled payment
         let record = MultiSigPaymentRecord {
             payment_id: payment.payment_id,
@@ -1009,7 +1069,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             signers: payment.signers.clone(),
             threshold: payment.threshold,
             status: PaymentStatus::Cancelled,
-            executed_at: env.ledger().timestamp(),
+            executed_at: cancelled_time,
             executor: Some(canceller.clone()),
             reason: Some(reason.clone()),
         };
@@ -1017,17 +1077,21 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         storage.archive_payment(&record);
         storage.remove_multisig_payment(payment_id);
 
-        // Emit event
-        log!(&env, "PaymentCancelled: payment_id={}, canceller={}, reason={}",
-             payment_id, canceller, reason);
+        // Emit audit event
+        env.events().publish(
+            (multisig_topic(&env), Symbol::new(&env, "cancelled")),
+            MultiSigPaymentCancelledEvent {
+                payment_id,
+                canceller,
+                reason,
+                timestamp: cancelled_time,
+            },
+        );
 
         Ok(())
     }
 
-    fn get_multisig_payment(
-        env: Env,
-        payment_id: u128,
-    ) -> Result<MultiSigPayment, PaymentError> {
+    fn get_multisig_payment(env: Env, payment_id: u128) -> Result<MultiSigPayment, PaymentError> {
         let storage = Storage::new(&env);
         storage.get_multisig_payment(payment_id)
     }
@@ -1046,51 +1110,58 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         // Process each payment
         for i in 0..payment_ids.len() {
             let payment_id = payment_ids.get(i).unwrap();
-
             // Try to execute each payment, continue on errors
             match Self::execute_single_payment(&env, &storage, payment_id, &executor) {
                 Ok(()) => {
                     executed_payments.push_back(payment_id);
-                    log!(&env, "BatchExecution: payment_id={} executed successfully", payment_id);
+                    // Event is emitted inside execute_single_payment via shared helper or we can emit here
+                    // Ideally execute_single_payment should handle event logic if it's reused.
+                    // For batch, we might want a summary event or individual ones.
                 }
                 Err(e) => {
-                    log!(&env, "BatchExecution: payment_id={} failed with error={:?}", payment_id, e);
+                    log!(
+                        &env,
+                        "BatchExecution: payment_id={} failed with error={:?}",
+                        payment_id,
+                        e
+                    );
                     // Continue with other payments even if one fails
                 }
             }
         }
 
-        // Emit batch completion event
-        log!(&env, "BatchExecutionCompleted: total_requested={}, executed={}",
-             payment_ids.len(), executed_payments.len());
-
+        // Emit batch completion log
+        log!(
+            &env,
+            "BatchExecutionCompleted: total_requested={}, executed={}",
+            payment_ids.len(),
+            executed_payments.len()
+        );
         Ok(executed_payments)
     }
 
     // Pause Management Operations
     fn set_pause_admin(env: Env, admin: Address, new_admin: Address) -> Result<(), PaymentError> {
         admin.require_auth();
-
         let storage = Storage::new(&env);
-        let _  = storage.set_pause_admin_internal(admin, new_admin);
+        let _ = storage.set_pause_admin_internal(admin, new_admin);
         Ok(())
     }
 
     fn pause(env: Env, admin: Address) -> Result<(), PaymentError> {
         admin.require_auth();
         let storage = Storage::new(&env);
-        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+        let pause_admin = storage
+            .get_pause_admin()
+            .unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
 
         if pause_admin != admin {
             return Err(PaymentError::NotAuthorized);
         }
-
         if Self::is_paused(&env) {
             return Err(PaymentError::AlreadyPaused);
         }
-
         storage.set_pause();
-
         env.events().publish(
             (Symbol::new(&env, "contract_paused"), admin),
             env.ledger().timestamp(),
@@ -1101,21 +1172,19 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     fn pause_for_duration(env: Env, admin: Address, duration: u64) -> Result<(), PaymentError> {
         admin.require_auth();
         let storage = Storage::new(&env);
-        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+        let pause_admin = storage
+            .get_pause_admin()
+            .unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
 
         if pause_admin != admin {
             return Err(PaymentError::NotAuthorized);
         }
-
         if Self::is_paused(&env) {
             return Err(PaymentError::AlreadyPaused);
         }
-
         let current_time = env.ledger().timestamp();
         let pause_until = current_time + duration;
-
         storage.set_pause_until(pause_until);
-
         env.events().publish(
             (Symbol::new(&env, "contract_paused"), admin),
             env.ledger().timestamp(),
@@ -1126,14 +1195,15 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     fn unpause(env: Env, admin: Address) -> Result<(), PaymentError> {
         admin.require_auth();
         let storage = Storage::new(&env);
-        let pause_admin = storage.get_pause_admin().unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
+        let pause_admin = storage
+            .get_pause_admin()
+            .unwrap_or_else(|_| panic_with_error!(env, PaymentError::AdminNotFound));
 
         if pause_admin != admin {
             return Err(PaymentError::NotAuthorized);
         }
         storage.set_unpause();
         storage.set_pause_until(0);
-
         env.events().publish(
             (Symbol::new(&env, "contract_unpaused"), admin),
             env.ledger().timestamp(),
@@ -1157,13 +1227,13 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
     ) -> Result<(), PaymentError> {
         // Caller may be merchant or payer; require auth
         caller.require_auth();
-
         let storage = Storage::new(&env);
         let payment = storage.get_payment(&order_id)?;
 
         // Validate caller is merchant or payer of the original payment
         let is_merchant = caller == payment.merchant_address;
         let is_payer = caller == payment.payer_address;
+
         if !is_merchant && !is_payer {
             return Err(PaymentError::NotAuthorized);
         }
@@ -1193,10 +1263,15 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             status: RefundStatus::Pending,
             approved_by: None,
         };
+
         storage.save_refund(&request);
 
         // Event
-        env.events().publish(("refund_initiated",), (refund_id.clone(), order_id.clone(), amount));
+        env.events().publish(
+            ("refund_initiated",),
+            (refund_id.clone(), order_id.clone(), amount),
+        );
+
         Ok(())
     }
 
@@ -1208,13 +1283,17 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         // Authorization: merchant of payment or admin
         let admin = storage.get_admin();
         let authorized = Some(caller.clone()) == admin || caller == req.merchant_address;
-        if !authorized { return Err(PaymentError::NotAuthorized); }
+
+        if !authorized {
+            return Err(PaymentError::NotAuthorized);
+        }
 
         if let RefundStatus::Pending = req.status {
             req.status = RefundStatus::Approved;
             req.approved_by = Some(caller.clone());
             storage.update_refund(&req);
-            env.events().publish(("refund_approved",), (refund_id.clone(),));
+            env.events()
+                .publish(("refund_approved",), (refund_id.clone(),));
             Ok(())
         } else {
             Err(PaymentError::InvalidRefundStatus)
@@ -1225,15 +1304,20 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         caller.require_auth();
         let storage = Storage::new(&env);
         let mut req = storage.get_refund(&refund_id)?;
+
         let admin = storage.get_admin();
         let authorized = Some(caller.clone()) == admin || caller == req.merchant_address;
-        if !authorized { return Err(PaymentError::NotAuthorized); }
+
+        if !authorized {
+            return Err(PaymentError::NotAuthorized);
+        }
 
         if let RefundStatus::Pending = req.status {
             req.status = RefundStatus::Rejected;
             req.approved_by = Some(caller.clone());
             storage.update_refund(&req);
-            env.events().publish(("refund_rejected",), (refund_id.clone(),));
+            env.events()
+                .publish(("refund_rejected",), (refund_id.clone(),));
             Ok(())
         } else {
             Err(PaymentError::InvalidRefundStatus)
@@ -1245,7 +1329,10 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let mut req = storage.get_refund(&refund_id)?;
 
         // Must be approved
-        if let RefundStatus::Approved = req.status { } else { return Err(PaymentError::InvalidRefundStatus); }
+        if let RefundStatus::Approved = req.status {
+        } else {
+            return Err(PaymentError::InvalidRefundStatus);
+        }
 
         // Load payment to update and validate remaining amount again
         let mut payment = storage.get_payment(&req.order_id)?;
@@ -1258,16 +1345,14 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
         // Transfer from merchant to payer
         let token_client = token::Client::new(&env, &req.token);
+
         // Optional balance check for clearer error
         let merchant_balance = token_client.balance(&req.merchant_address);
         if merchant_balance < req.amount {
             return Err(PaymentError::InsufficientBalance);
         }
-        token_client.transfer(
-            &req.merchant_address,
-            &req.payer_address,
-            &req.amount,
-        );
+
+        token_client.transfer(&req.merchant_address, &req.payer_address, &req.amount);
 
         // Update payment refunded amount
         payment.refunded_amount = payment.refunded_amount + req.amount;
@@ -1277,7 +1362,8 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         req.status = RefundStatus::Completed;
         storage.update_refund(&req);
 
-        env.events().publish(("refund_executed",), (refund_id.clone(), req.amount));
+        env.events()
+            .publish(("refund_executed",), (refund_id.clone(), req.amount));
         Ok(())
     }
 
@@ -1461,7 +1547,9 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
 
             match payment.get_status() {
                 crate::types::PaymentRecordStatus::Completed => completed_count += 1,
-                crate::types::PaymentRecordStatus::PartiallyRefunded => partially_refunded_count += 1,
+                crate::types::PaymentRecordStatus::PartiallyRefunded => {
+                    partially_refunded_count += 1
+                }
                 crate::types::PaymentRecordStatus::FullyRefunded => fully_refunded_count += 1,
                 crate::types::PaymentRecordStatus::Any => {
                     // This should never happen from get_status(), but included for exhaustiveness
@@ -1517,10 +1605,8 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         payment.refunded_amount = refunded_amount;
         storage.update_payment(&payment);
 
-        env.events().publish(
-            ("payment_status_updated",),
-            (order_id, refunded_amount),
-        );
+        env.events()
+            .publish(("payment_status_updated",), (order_id, refunded_amount));
 
         Ok(())
     }
@@ -1547,18 +1633,12 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         storage.remove_merchant_payment_index(&payment.merchant_address, &order_id);
         storage.remove_payer_payment_index(&payment.payer_address, &order_id);
 
-        env.events().publish(
-            ("payment_archived",),
-            order_id,
-        );
+        env.events().publish(("payment_archived",), order_id);
 
         Ok(())
     }
 
-    fn cleanup_expired_payments(
-        env: Env,
-        admin: Address,
-    ) -> Result<u32, PaymentError> {
+    fn cleanup_expired_payments(env: Env, admin: Address) -> Result<u32, PaymentError> {
         // Require admin authorization
         Self::require_admin_access(&env, &admin)?;
 
@@ -1601,10 +1681,8 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
             }
         }
 
-        env.events().publish(
-            ("payments_cleaned_up",),
-            cleaned_count,
-        );
+        env.events()
+            .publish(("payments_cleaned_up",), cleaned_count);
 
         Ok(cleaned_count)
     }
@@ -1626,10 +1704,7 @@ impl PaymentProcessingTrait for PaymentProcessingContract {
         let storage = Storage::new(&env);
         storage.set_cleanup_period(period);
 
-        env.events().publish(
-            ("cleanup_period_set",),
-            period,
-        );
+        env.events().publish(("cleanup_period_set",), period);
 
         Ok(())
     }
@@ -1685,7 +1760,7 @@ impl PaymentProcessingContract {
 fn create_optimized_message(env: &Env, order: &PaymentOrder) -> Bytes {
     // Pre-calculate approximate message size to avoid reallocations
     let mut message = Bytes::new(env);
-    
+
     // Add merchant address (32 bytes)
     message.append(&order.merchant_address.clone().to_xdr(env));
 
@@ -1712,7 +1787,7 @@ fn create_optimized_message(env: &Env, order: &PaymentOrder) -> Bytes {
 
     // Add order id
     message.append(&order.order_id.clone().to_xdr(env));
-    
+
     message
 }
 
@@ -1744,10 +1819,6 @@ impl PaymentProcessingContract {
 
         // Remove from active payments for cleanup
         storage.remove_multisig_payment(payment.payment_id);
-
-        // Emit completion event
-        log!(env, "PaymentCompleted: payment_id={}, archived_at={}",
-             payment.payment_id, env.ledger().timestamp());
 
         Ok(())
     }

@@ -1,6 +1,6 @@
-use soroban_sdk::String;
 use crate::error::PaymentError;
 use crate::types::PaymentQueryFilter;
+use soroban_sdk::String;
 
 // Validation constants
 pub const MIN_NAME_LENGTH: u32 = 1;
@@ -55,7 +55,10 @@ pub fn validate_query_limit(limit: u32) -> Result<(), PaymentError> {
 }
 
 /// Validates date range parameters
-pub fn validate_date_range(date_start: Option<u64>, date_end: Option<u64>) -> Result<(), PaymentError> {
+pub fn validate_date_range(
+    date_start: Option<u64>,
+    date_end: Option<u64>,
+) -> Result<(), PaymentError> {
     if let (Some(start), Some(end)) = (date_start, date_end) {
         if end < start {
             return Err(PaymentError::InvalidDateRange);
@@ -71,7 +74,10 @@ pub fn validate_date_range(date_start: Option<u64>, date_end: Option<u64>) -> Re
 }
 
 /// Validates amount range parameters
-pub fn validate_amount_range(amount_min: Option<i128>, amount_max: Option<i128>) -> Result<(), PaymentError> {
+pub fn validate_amount_range(
+    amount_min: Option<i128>,
+    amount_max: Option<i128>,
+) -> Result<(), PaymentError> {
     if let (Some(min), Some(max)) = (amount_min, amount_max) {
         if min < 0 || max < 0 {
             return Err(PaymentError::InvalidAmount);
@@ -92,10 +98,17 @@ pub fn validate_amount_range(amount_min: Option<i128>, amount_max: Option<i128>)
 }
 
 /// Validates cursor (order_id) exists
-pub fn validate_cursor(_env: &soroban_sdk::Env, cursor: &Option<String>, storage: &crate::storage::Storage) -> Result<(), PaymentError> {
+pub fn validate_cursor(
+    _env: &soroban_sdk::Env,
+    cursor: &Option<String>,
+    storage: &crate::storage::Storage,
+) -> Result<(), PaymentError> {
     if let Some(ref order_id) = cursor {
         // Check if payment exists
-        storage.get_payment(order_id).map(|_| ()).map_err(|_| PaymentError::InvalidCursor)?;
+        storage
+            .get_payment(order_id)
+            .map(|_| ())
+            .map_err(|_| PaymentError::InvalidCursor)?;
     }
     Ok(())
 }
